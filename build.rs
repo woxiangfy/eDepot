@@ -8,8 +8,14 @@ fn main() {
     let ebpf_dir = manifest_dir.join("ebpf");
 
     println!("cargo:rerun-if-changed={}", ebpf_dir.join("src").display());
-    println!("cargo:rerun-if-changed={}", ebpf_dir.join("build.rs").display());
-    println!("cargo:rerun-if-changed={}", ebpf_dir.join("Cargo.toml").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        ebpf_dir.join("build.rs").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        ebpf_dir.join("Cargo.toml").display()
+    );
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let has_ebpf_feature = env::var("CARGO_FEATURE_EBPF").is_ok();

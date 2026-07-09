@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 use crate::event::BanAction;
 
@@ -37,15 +37,15 @@ pub struct Storage {
 
 impl Storage {
     /// 创建新的存储实例
-    /// 
+    ///
     /// 打开 SQLite 数据库连接并初始化表结构
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `path` - 数据库文件路径
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回 Storage 实例，或错误信息
     pub fn new(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -58,7 +58,7 @@ impl Storage {
     }
 
     /// 初始化数据库表结构
-    /// 
+    ///
     /// 创建 attack_events 和 ban_records 表以及相应的索引
     fn init_tables(conn: &Connection) -> Result<()> {
         conn.execute(
@@ -100,17 +100,17 @@ impl Storage {
     }
 
     /// 插入攻击事件
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `source_ip` - 源 IP 地址
     /// * `protocol` - 协议类型
     /// * `port` - 目标端口
     /// * `rule` - 触发的规则名称
     /// * `count` - 事件计数
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回插入记录的 ID
     pub fn insert_attack_event(
         &self,
@@ -133,13 +133,13 @@ impl Storage {
     }
 
     /// 插入封禁记录
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `ban` - 封禁动作
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回插入记录的 ID
     pub fn insert_ban_record(&self, ban: &BanAction) -> Result<i64> {
         let now = Utc::now().timestamp() as i64;
@@ -148,7 +148,13 @@ impl Storage {
         conn.execute(
             "INSERT INTO ban_records (ip, duration, reason, status, created_at)
              VALUES (?, ?, ?, ?, ?)",
-            params![ban.src_ip.to_string(), ban.duration, ban.reason, "active", now],
+            params![
+                ban.src_ip.to_string(),
+                ban.duration,
+                ban.reason,
+                "active",
+                now
+            ],
         )?;
 
         info!(
@@ -159,11 +165,11 @@ impl Storage {
     }
 
     /// 更新封禁状态
-    /// 
+    ///
     /// 将指定 IP 的活跃封禁记录更新为新状态
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `ip` - IP 地址
     /// * `status` - 新状态（如 "expired", "removed"）
     pub fn update_ban_status(&self, ip: &str, status: &str) -> Result<()> {
@@ -177,13 +183,13 @@ impl Storage {
     }
 
     /// 获取攻击事件列表
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `limit` - 返回的最大记录数
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回攻击事件列表，按时间降序排列
     pub fn get_attack_events(&self, limit: usize) -> Result<Vec<AttackEvent>> {
         let conn = self.conn.lock().unwrap();
@@ -210,13 +216,13 @@ impl Storage {
     }
 
     /// 获取封禁记录列表
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `status` - 可选的状态过滤（如 "active"）
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回封禁记录列表，按时间降序排列
     pub fn get_ban_records(&self, status: Option<&str>) -> Result<Vec<BanRecord>> {
         let conn = self.conn.lock().unwrap();
@@ -235,7 +241,8 @@ impl Storage {
                     duration: row.get(2)?,
                     reason: row.get(3)?,
                     status: row.get(4)?,
-                    created_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(|| Utc::now()),
+                    created_at: DateTime::from_timestamp(row.get(5)?, 0)
+                        .unwrap_or_else(|| Utc::now()),
                 });
             }
         } else {
@@ -251,7 +258,8 @@ impl Storage {
                     duration: row.get(2)?,
                     reason: row.get(3)?,
                     status: row.get(4)?,
-                    created_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(|| Utc::now()),
+                    created_at: DateTime::from_timestamp(row.get(5)?, 0)
+                        .unwrap_or_else(|| Utc::now()),
                 });
             }
         }
@@ -260,15 +268,15 @@ impl Storage {
     }
 
     /// 清理过期的攻击事件
-    /// 
+    ///
     /// 删除指定天数之前的攻击事件记录
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `days` - 保留天数
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回删除的记录数
     pub fn cleanup_old_events(&self, days: u32) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
@@ -303,7 +311,9 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let storage = Storage::new(temp_file.path()).unwrap();
 
-        let id = storage.insert_attack_event("192.168.1.100", "tcp", 22, "ssh_bruteforce", 10).unwrap();
+        let id = storage
+            .insert_attack_event("192.168.1.100", "tcp", 22, "ssh_bruteforce", 10)
+            .unwrap();
 
         assert!(id > 0);
     }
@@ -347,9 +357,13 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let storage = Storage::new(temp_file.path()).unwrap();
 
-        storage.insert_attack_event("192.168.1.100", "tcp", 22, "ssh_bruteforce", 10).unwrap();
+        storage
+            .insert_attack_event("192.168.1.100", "tcp", 22, "ssh_bruteforce", 10)
+            .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(1));
-        storage.insert_attack_event("10.0.0.1", "udp", 53, "udp_scan", 50).unwrap();
+        storage
+            .insert_attack_event("10.0.0.1", "udp", 53, "udp_scan", 50)
+            .unwrap();
 
         let events = storage.get_attack_events(10).unwrap();
 
@@ -440,8 +454,12 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let storage = Storage::new(temp_file.path()).unwrap();
 
-        storage.insert_attack_event("192.168.1.100", "tcp", 22, "ssh_bruteforce", 10).unwrap();
-        storage.insert_attack_event("10.0.0.1", "udp", 53, "udp_scan", 50).unwrap();
+        storage
+            .insert_attack_event("192.168.1.100", "tcp", 22, "ssh_bruteforce", 10)
+            .unwrap();
+        storage
+            .insert_attack_event("10.0.0.1", "udp", 53, "udp_scan", 50)
+            .unwrap();
 
         let count = storage.cleanup_old_events(365).unwrap();
 

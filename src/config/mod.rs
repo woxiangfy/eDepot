@@ -58,13 +58,13 @@ pub struct Config {
 
 impl Config {
     /// 从 TOML 文件加载配置
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `path` - 配置文件路径
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回解析后的 Config 结构体，或错误信息
     pub fn from_file(path: &str) -> Result<Self> {
         let content = fs::read_to_string(path)?;
@@ -73,13 +73,13 @@ impl Config {
     }
 
     /// 检查 IP 地址是否在白名单中
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `ip` - 待检查的 IP 地址
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 如果 IP 在白名单中返回 true，否则返回 false
     pub fn is_whitelisted(&self, ip: &IpAddr) -> bool {
         self.whitelist.cidr.iter().any(|cidr| {
@@ -105,14 +105,16 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv4Addr, Ipv6Addr};
     use std::io::Write;
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use tempfile::NamedTempFile;
 
     #[test]
     fn test_from_file_valid() {
         let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, r#"
+        writeln!(
+            temp_file,
+            r#"
 [global]
 worker_count = 4
 nft_table = "edepot"
@@ -132,10 +134,12 @@ rule_type = "ip"
 window_secs = 20
 threshold = 8
 block_duration = 3600
-"#).unwrap();
+"#
+        )
+        .unwrap();
 
         let config = Config::from_file(temp_file.path().to_str().unwrap()).unwrap();
-        
+
         assert_eq!(config.global.worker_count, 4);
         assert_eq!(config.global.nft_table, "edepot");
         assert_eq!(config.whitelist.cidr.len(), 2);
@@ -147,10 +151,14 @@ block_duration = 3600
     #[test]
     fn test_from_file_invalid() {
         let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, r#"
+        writeln!(
+            temp_file,
+            r#"
 [global]
 worker_count = "not_a_number"
-"#).unwrap();
+"#
+        )
+        .unwrap();
 
         let result = Config::from_file(temp_file.path().to_str().unwrap());
         assert!(result.is_err());
@@ -165,10 +173,18 @@ worker_count = "not_a_number"
     #[test]
     fn test_is_whitelisted_ipv4() {
         let config = Config {
-            global: GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
-            whitelist: WhitelistConfig { cidr: vec!["192.168.1.0/24".to_string(), "127.0.0.0/8".to_string()] },
+            global: GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
+            whitelist: WhitelistConfig {
+                cidr: vec!["192.168.1.0/24".to_string(), "127.0.0.0/8".to_string()],
+            },
             rules: Vec::new(),
-            memory: MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         };
 
         assert!(config.is_whitelisted(&IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
@@ -179,10 +195,18 @@ worker_count = "not_a_number"
     #[test]
     fn test_is_whitelisted_ipv6() {
         let config = Config {
-            global: GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
-            whitelist: WhitelistConfig { cidr: vec!["::1/128".to_string(), "fe80::/10".to_string()] },
+            global: GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
+            whitelist: WhitelistConfig {
+                cidr: vec!["::1/128".to_string(), "fe80::/10".to_string()],
+            },
             rules: Vec::new(),
-            memory: MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         };
 
         assert!(config.is_whitelisted(&IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))));
@@ -193,10 +217,18 @@ worker_count = "not_a_number"
     #[test]
     fn test_is_whitelisted_invalid_cidr() {
         let config = Config {
-            global: GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
-            whitelist: WhitelistConfig { cidr: vec!["invalid-cidr".to_string()] },
+            global: GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
+            whitelist: WhitelistConfig {
+                cidr: vec!["invalid-cidr".to_string()],
+            },
             rules: Vec::new(),
-            memory: MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         };
 
         assert!(!config.is_whitelisted(&IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
@@ -205,7 +237,10 @@ worker_count = "not_a_number"
     #[test]
     fn test_rule_count() {
         let config = Config {
-            global: GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: WhitelistConfig { cidr: Vec::new() },
             rules: vec![
                 RuleConfig {
@@ -231,7 +266,10 @@ worker_count = "not_a_number"
                     ipv6_prefix: Some(64),
                 },
             ],
-            memory: MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         };
 
         assert_eq!(config.rule_count(), 2);
@@ -241,10 +279,16 @@ worker_count = "not_a_number"
     #[test]
     fn test_empty_config() {
         let config = Config {
-            global: GlobalConfig { worker_count: 0, nft_table: "".to_string() },
+            global: GlobalConfig {
+                worker_count: 0,
+                nft_table: "".to_string(),
+            },
             whitelist: WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: MemoryConfig { max_entries: 0, cleanup_interval: 0 },
+            memory: MemoryConfig {
+                max_entries: 0,
+                cleanup_interval: 0,
+            },
         };
 
         assert_eq!(config.rule_count(), 0);

@@ -75,12 +75,34 @@ pub fn print_environment_report() {
     match check_environment() {
         Ok(result) => {
             println!("=== eDepot Environment Check ===");
-            println!("OS Check: {}", if result.os_check { "PASS" } else { "FAIL" });
-            println!("Kernel Version: {}", if result.kernel_check { "PASS" } else { "FAIL" });
-            println!("nftables: {}", if result.nftables_check { "PASS" } else { "FAIL" });
-            println!("eBPF Support: {}", if result.ebpf_check { "PASS" } else { "FAIL" });
-            println!("Root Privileges: {}", if result.root_check { "PASS" } else { "FAIL" });
-            println!("Sysctl Settings: {}", if result.sysctl_check { "PASS" } else { "FAIL" });
+            println!(
+                "OS Check: {}",
+                if result.os_check { "PASS" } else { "FAIL" }
+            );
+            println!(
+                "Kernel Version: {}",
+                if result.kernel_check { "PASS" } else { "FAIL" }
+            );
+            println!(
+                "nftables: {}",
+                if result.nftables_check {
+                    "PASS"
+                } else {
+                    "FAIL"
+                }
+            );
+            println!(
+                "eBPF Support: {}",
+                if result.ebpf_check { "PASS" } else { "FAIL" }
+            );
+            println!(
+                "Root Privileges: {}",
+                if result.root_check { "PASS" } else { "FAIL" }
+            );
+            println!(
+                "Sysctl Settings: {}",
+                if result.sysctl_check { "PASS" } else { "FAIL" }
+            );
             println!("");
             if is_environment_supported() {
                 println!("Environment: SUPPORTED - eDepot can run");

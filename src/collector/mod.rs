@@ -3,8 +3,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use crate::event::NetworkEvent;
 use crate::error::Result;
+use crate::event::NetworkEvent;
 
 pub mod error;
 pub use error::Error;
@@ -22,9 +22,9 @@ pub struct NetworkEventRaw {
 
 impl NetworkEventRaw {
     /// 创建新的原始网络事件
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `family` - 地址族 (2=IPv4, 10=IPv6)
     /// * `src_ip` - 源 IP 地址（16字节数组）
     /// * `dst_port` - 目标端口（大端序）
@@ -42,7 +42,7 @@ impl NetworkEventRaw {
     }
 
     /// 将原始事件转换为 NetworkEvent
-    /// 
+    ///
     /// 根据 family 字段判断是 IPv4 还是 IPv6，然后解析 src_ip 字段
     pub fn to_network_event(&self) -> NetworkEvent {
         let src_ip = if self.family == 2 {
@@ -81,9 +81,9 @@ pub struct Collector {
 
 impl Collector {
     /// 创建新的采集器
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `tx` - 事件发送通道，用于将采集到的事件发送给分发器
     pub async fn new(tx: mpsc::Sender<NetworkEvent>) -> Result<Self> {
         #[cfg(feature = "ebpf")]
@@ -107,7 +107,7 @@ impl Collector {
     }
 
     /// 加载 tracepoint 程序
-    /// 
+    ///
     /// 加载用于监控 TCP 连接状态变化的 tracepoint 程序
     pub async fn load_tracepoint(&mut self) -> Result<()> {
         #[cfg(feature = "ebpf")]
@@ -133,11 +133,11 @@ impl Collector {
     }
 
     /// 加载 XDP 程序
-    /// 
+    ///
     /// 在指定网络接口上加载 XDP 程序，用于快速过滤数据包
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `interface` - 网络接口名称（如 eth0）
     pub async fn load_xdp(&mut self, interface: &str) -> Result<()> {
         #[cfg(feature = "ebpf")]
@@ -163,7 +163,7 @@ impl Collector {
     }
 
     /// 启动事件循环
-    /// 
+    ///
     /// 开始从 eBPF 程序接收事件并发送到事件通道
     pub async fn start_event_loop(&self) -> Result<()> {
         #[cfg(feature = "ebpf")]
@@ -194,7 +194,8 @@ impl Collector {
                                         let offset = i * mem::size_of::<NetworkEventRaw>();
                                         if offset + mem::size_of::<NetworkEventRaw>() <= read.read {
                                             let raw: &NetworkEventRaw = unsafe {
-                                                &*(buffers.as_ptr().add(offset) as *const NetworkEventRaw)
+                                                &*(buffers.as_ptr().add(offset)
+                                                    as *const NetworkEventRaw)
                                             };
                                             let event = raw.to_network_event();
                                             if tx.send(event).await.is_err() {
@@ -228,9 +229,9 @@ impl Collector {
     }
 
     /// 发送测试事件（用于测试）
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `event` - 要发送的网络事件
     pub async fn send_test_event(&self, event: NetworkEvent) -> Result<()> {
         self.tx.send(event).await.map_err(|e| {
@@ -274,13 +275,18 @@ mod tests {
 
     #[test]
     fn test_to_network_event_ipv6() {
-        let src_ip: [u8; 16] = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01];
+        let src_ip: [u8; 16] = [
+            0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+        ];
         let raw = NetworkEventRaw::new(10, src_ip, u16::to_be(80), 6, 1234567890);
 
         let event = raw.to_network_event();
 
         assert_eq!(event.family, 10);
-        assert_eq!(event.src_ip, IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)));
+        assert_eq!(
+            event.src_ip,
+            IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))
+        );
         assert_eq!(event.dst_port, 80);
         assert_eq!(event.protocol, 6);
     }

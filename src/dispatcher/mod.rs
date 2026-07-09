@@ -5,8 +5,8 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::config::Config;
-use crate::event::NetworkEvent;
 use crate::error::Result;
+use crate::event::NetworkEvent;
 
 pub mod error;
 pub use error::Error;
@@ -18,9 +18,9 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     /// 创建新的事件分发器
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `config` - 配置（包含白名单）
     /// * `worker_senders` - Worker 的发送通道列表
     pub fn new(config: Arc<Config>, worker_senders: Vec<mpsc::Sender<NetworkEvent>>) -> Self {
@@ -31,11 +31,11 @@ impl Dispatcher {
     }
 
     /// 运行分发器主循环
-    /// 
+    ///
     /// 从接收通道获取事件，进行白名单过滤后分发给对应的 Worker
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `rx` - 事件接收通道
     pub async fn run(&self, mut rx: mpsc::Receiver<NetworkEvent>) -> Result<()> {
         info!("Dispatcher started");
@@ -62,16 +62,16 @@ impl Dispatcher {
     }
 
     /// 根据事件选择目标 Worker
-    /// 
+    ///
     /// 使用 FNV-1a 哈希算法对源 IP 进行哈希，确保同一 IP 的事件总是发送到同一个 Worker，
     /// 同时保证分布更均匀。
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `event` - 网络事件
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回 Worker 的索引
     fn select_worker(&self, event: &NetworkEvent) -> usize {
         let bytes = match event.src_ip {
@@ -104,10 +104,16 @@ mod tests {
     #[test]
     fn test_new() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (tx1, _rx1) = mpsc::channel(100);
@@ -122,10 +128,16 @@ mod tests {
     #[test]
     fn test_select_worker_ipv4() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (tx1, _rx1) = mpsc::channel(100);
@@ -154,10 +166,16 @@ mod tests {
     #[test]
     fn test_select_worker_ipv6() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (tx1, _rx1) = mpsc::channel(100);
@@ -185,10 +203,18 @@ mod tests {
     #[test]
     fn test_is_whitelisted() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
-            whitelist: crate::config::WhitelistConfig { cidr: vec!["127.0.0.0/8".to_string(), "::1/128".to_string()] },
+            global: crate::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
+            whitelist: crate::config::WhitelistConfig {
+                cidr: vec!["127.0.0.0/8".to_string(), "::1/128".to_string()],
+            },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (tx, _rx) = mpsc::channel(100);
@@ -208,10 +234,18 @@ mod tests {
     #[tokio::test]
     async fn test_run_with_whitelist() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 1, nft_table: "edepot".to_string() },
-            whitelist: crate::config::WhitelistConfig { cidr: vec!["127.0.0.0/8".to_string()] },
+            global: crate::config::GlobalConfig {
+                worker_count: 1,
+                nft_table: "edepot".to_string(),
+            },
+            whitelist: crate::config::WhitelistConfig {
+                cidr: vec!["127.0.0.0/8".to_string()],
+            },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (worker_tx, mut worker_rx) = mpsc::channel(100);
@@ -224,11 +258,16 @@ mod tests {
             let _ = dispatcher.run(dispatcher_rx).await;
         });
 
-        let whitelisted_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 22, 6, 0);
-        let non_whitelisted_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 22, 6, 0);
+        let whitelisted_event =
+            NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 22, 6, 0);
+        let non_whitelisted_event =
+            NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 22, 6, 0);
 
         dispatcher_tx.send(whitelisted_event).await.unwrap();
-        dispatcher_tx.send(non_whitelisted_event.clone()).await.unwrap();
+        dispatcher_tx
+            .send(non_whitelisted_event.clone())
+            .await
+            .unwrap();
 
         drop(dispatcher_tx);
 
@@ -241,10 +280,16 @@ mod tests {
     #[tokio::test]
     async fn test_run_distribution() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 2, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 2,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (worker_tx1, mut worker_rx1) = mpsc::channel(100);
@@ -282,18 +327,31 @@ mod tests {
             received_events_worker2.push(event);
         }
 
-        assert_eq!(received_events_worker1.len() + received_events_worker2.len(), 3);
-        assert!(received_events_worker1.contains(&event1) == received_events_worker1.contains(&event2));
-        assert!(received_events_worker2.contains(&event1) == received_events_worker2.contains(&event2));
+        assert_eq!(
+            received_events_worker1.len() + received_events_worker2.len(),
+            3
+        );
+        assert!(
+            received_events_worker1.contains(&event1) == received_events_worker1.contains(&event2)
+        );
+        assert!(
+            received_events_worker2.contains(&event1) == received_events_worker2.contains(&event2)
+        );
     }
 
     #[test]
     fn test_worker_count() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (tx1, _rx1) = mpsc::channel(100);

@@ -25,7 +25,6 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
-          targets: bpfel-unknown-none
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -43,30 +42,16 @@ jobs:
             build-essential \
             libssl-dev \
             pkg-config \
-            libsqlite3-dev \
-            libelf-dev \
-            zlib1g-dev \
-            llvm-dev \
-            libclang-dev \
-            clang
-
-      - name: Install bpf-linker
-        run: cargo install bpf-linker
+            libsqlite3-dev
 
       - name: Format check
         run: cargo fmt --all -- --check
 
-      - name: Clippy check (default features)
+      - name: Clippy check
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Clippy check (ebpf feature)
-        run: cargo clippy --all-targets --features ebpf -- -D warnings
-
-      - name: Check compilation (default features)
+      - name: Check compilation
         run: cargo check --release
-
-      - name: Check compilation (ebpf feature)
-        run: cargo check --release --features ebpf
 
   test:
     name: Run Tests
@@ -96,21 +81,10 @@ jobs:
             build-essential \
             libssl-dev \
             pkg-config \
-            libsqlite3-dev \
-            libelf-dev \
-            zlib1g-dev \
-            llvm-dev \
-            libclang-dev \
-            clang
+            libsqlite3-dev
 
-      - name: Install bpf-linker
-        run: cargo install bpf-linker
-
-      - name: Run tests (default features)
+      - name: Run tests
         run: cargo test --all
-
-      - name: Run tests (ebpf feature)
-        run: cargo test --all --features ebpf
 
       - name: Run doc tests
         run: cargo test --doc

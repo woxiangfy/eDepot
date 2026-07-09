@@ -11,9 +11,9 @@ pub struct NetworkEvent {
 
 impl NetworkEvent {
     /// 创建新的网络事件
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `family` - 地址族 (2=IPv4, 10=IPv6)
     /// * `src_ip` - 源 IP 地址
     /// * `dst_port` - 目标端口
@@ -76,9 +76,9 @@ pub struct BanAction {
 
 impl BanAction {
     /// 创建新的封禁动作
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `src_ip` - 要封禁的 IP 地址
     /// * `rule_name` - 触发的规则名称
     /// * `duration` - 封禁时长（秒）
@@ -123,7 +123,13 @@ mod tests {
     #[test]
     fn test_is_ipv4() {
         let ipv4_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 22, 6, 0);
-        let ipv6_event = NetworkEvent::new(10, IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 22, 6, 0);
+        let ipv6_event = NetworkEvent::new(
+            10,
+            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+            22,
+            6,
+            0,
+        );
 
         assert!(ipv4_event.is_ipv4());
         assert!(!ipv6_event.is_ipv4());
@@ -132,7 +138,13 @@ mod tests {
     #[test]
     fn test_is_ipv6() {
         let ipv4_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 22, 6, 0);
-        let ipv6_event = NetworkEvent::new(10, IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 22, 6, 0);
+        let ipv6_event = NetworkEvent::new(
+            10,
+            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+            22,
+            6,
+            0,
+        );
 
         assert!(!ipv4_event.is_ipv6());
         assert!(ipv6_event.is_ipv6());
@@ -142,7 +154,13 @@ mod tests {
     fn test_ipv4_method() {
         let ipv4_addr = Ipv4Addr::new(192, 168, 1, 1);
         let ipv4_event = NetworkEvent::new(2, IpAddr::V4(ipv4_addr), 22, 6, 0);
-        let ipv6_event = NetworkEvent::new(10, IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 22, 6, 0);
+        let ipv6_event = NetworkEvent::new(
+            10,
+            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+            22,
+            6,
+            0,
+        );
 
         assert_eq!(ipv4_event.ipv4(), Some(ipv4_addr));
         assert_eq!(ipv6_event.ipv4(), None);
@@ -162,7 +180,8 @@ mod tests {
     fn test_is_tcp() {
         let tcp_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 22, 6, 0);
         let udp_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 53, 17, 0);
-        let other_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 123, 1, 0);
+        let other_event =
+            NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 123, 1, 0);
 
         assert!(tcp_event.is_tcp());
         assert!(!udp_event.is_tcp());
@@ -173,7 +192,8 @@ mod tests {
     fn test_is_udp() {
         let tcp_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 22, 6, 0);
         let udp_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 53, 17, 0);
-        let other_event = NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 123, 1, 0);
+        let other_event =
+            NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 123, 1, 0);
 
         assert!(!tcp_event.is_udp());
         assert!(udp_event.is_udp());
@@ -183,7 +203,12 @@ mod tests {
     #[test]
     fn test_ban_action_new() {
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
-        let ban = BanAction::new(ip, "ssh_bruteforce".to_string(), 3600, "exceeded threshold".to_string());
+        let ban = BanAction::new(
+            ip,
+            "ssh_bruteforce".to_string(),
+            3600,
+            "exceeded threshold".to_string(),
+        );
 
         assert_eq!(ban.src_ip, ip);
         assert_eq!(ban.rule_name, "ssh_bruteforce");
@@ -195,7 +220,7 @@ mod tests {
     fn test_network_event_partial_eq() {
         let ip1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let ip2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        
+
         let event1 = NetworkEvent::new(2, ip1, 22, 6, 12345);
         let event2 = NetworkEvent::new(2, ip1, 22, 6, 12345);
         let event3 = NetworkEvent::new(2, ip2, 22, 6, 12345);
@@ -208,7 +233,7 @@ mod tests {
     fn test_ban_action_partial_eq() {
         let ip1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let ip2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        
+
         let ban1 = BanAction::new(ip1, "rule1".to_string(), 3600, "reason".to_string());
         let ban2 = BanAction::new(ip1, "rule1".to_string(), 3600, "reason".to_string());
         let ban3 = BanAction::new(ip2, "rule1".to_string(), 3600, "reason".to_string());

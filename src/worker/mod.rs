@@ -2,12 +2,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::mpsc;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 use crate::config::Config;
+use crate::error::Result;
 use crate::event::NetworkEvent;
 use crate::rules::RuleEngine;
-use crate::error::Result;
 
 pub mod error;
 pub use error::Error;
@@ -21,9 +21,9 @@ pub struct Worker {
 
 impl Worker {
     /// 创建新的 Worker
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `id` - Worker 标识符
     /// * `config` - 配置
     /// * `rule_engine` - 规则引擎
@@ -43,7 +43,7 @@ impl Worker {
     }
 
     /// 运行 Worker 主循环
-    /// 
+    ///
     /// 从通道接收事件并评估规则，同时定期清理过期状态。
     /// 当通道关闭时会优雅退出。
     pub async fn run(mut self) -> Result<()> {
@@ -87,37 +87,41 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::{Rule, RuleType};
     use std::net::{IpAddr, Ipv4Addr};
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use crate::rules::{Rule, RuleType};
 
     #[test]
     fn test_worker_new() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (_tx, rx) = mpsc::channel(100);
         let (nft_tx, _nft_rx) = mpsc::channel(100);
         let (storage_tx, _storage_rx) = mpsc::channel(100);
 
-        let rules = vec![
-            Rule {
-                name: "test_rule".to_string(),
-                protocol: 6,
-                ports: Some(vec![22]),
-                rule_type: RuleType::Ip,
-                window_secs: 20,
-                threshold: 10,
-                block_duration: 3600,
-                ipv4_prefix: 24,
-                ipv6_prefix: 64,
-            },
-        ];
+        let rules = vec![Rule {
+            name: "test_rule".to_string(),
+            protocol: 6,
+            ports: Some(vec![22]),
+            rule_type: RuleType::Ip,
+            window_secs: 20,
+            threshold: 10,
+            block_duration: 3600,
+            ipv4_prefix: 24,
+            ipv6_prefix: 64,
+        }];
 
         let rule_engine = RuleEngine::new(rules, nft_tx, storage_tx);
         let worker = Worker::new(1, config, rule_engine, rx);
@@ -128,44 +132,41 @@ mod tests {
     #[tokio::test]
     async fn test_worker_run_receive_event() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 1, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 1,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (tx, rx) = mpsc::channel(100);
         let (nft_tx, _nft_rx) = mpsc::channel(100);
         let (storage_tx, _storage_rx) = mpsc::channel(100);
 
-        let rules = vec![
-            Rule {
-                name: "test_rule".to_string(),
-                protocol: 6,
-                ports: Some(vec![22]),
-                rule_type: RuleType::Ip,
-                window_secs: 60,
-                threshold: 10,
-                block_duration: 3600,
-                ipv4_prefix: 24,
-                ipv6_prefix: 64,
-            },
-        ];
+        let rules = vec![Rule {
+            name: "test_rule".to_string(),
+            protocol: 6,
+            ports: Some(vec![22]),
+            rule_type: RuleType::Ip,
+            window_secs: 60,
+            threshold: 10,
+            block_duration: 3600,
+            ipv4_prefix: 24,
+            ipv6_prefix: 64,
+        }];
 
         let rule_engine = RuleEngine::new(rules, nft_tx, storage_tx);
         let worker = Worker::new(1, config, rule_engine, rx);
 
-        let handle = tokio::spawn(async move {
-            worker.run().await
-        });
+        let handle = tokio::spawn(async move { worker.run().await });
 
-        let test_event = NetworkEvent::new(
-            2,
-            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)),
-            22,
-            6,
-            0,
-        );
+        let test_event =
+            NetworkEvent::new(2, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 22, 6, 0);
 
         tx.send(test_event).await.unwrap();
 
@@ -180,10 +181,16 @@ mod tests {
     #[tokio::test]
     async fn test_worker_id() {
         let config = Arc::new(Config {
-            global: crate::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: crate::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
-            memory: crate::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: crate::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         });
 
         let (_tx, rx) = mpsc::channel(100);

@@ -17,7 +17,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: bpfel-unknown-none
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -26,7 +25,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install system dependencies
         run: |
@@ -36,18 +35,10 @@ jobs:
             libssl-dev \
             pkg-config \
             nftables \
-            libsqlite3-dev \
-            libelf-dev \
-            zlib1g-dev \
-            llvm-dev \
-            libclang-dev \
-            clang
+            libsqlite3-dev
 
-      - name: Install bpf-linker
-        run: cargo install bpf-linker
-
-      - name: Build release binary (with eBPF)
-        run: cargo build --release --features ebpf
+      - name: Build release binary
+        run: cargo build --release
 
       - name: Verify binary exists
         run: test -f target/release/edepot

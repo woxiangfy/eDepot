@@ -2,19 +2,19 @@ use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 use tracing_subscriber;
 
-use edepot::config::Config;
 use edepot::collector::Collector;
+use edepot::config::Config;
 use edepot::dispatcher::Dispatcher;
-use edepot::worker::Worker;
-use edepot::rules::{Rule, RuleEngine};
-use edepot::nft::NftController;
-use edepot::storage::Storage;
-use edepot::event::{NetworkEvent, BanAction};
-use edepot::error::Result;
 use edepot::env_check::{is_environment_supported, print_environment_report};
+use edepot::error::Result;
+use edepot::event::{BanAction, NetworkEvent};
+use edepot::nft::NftController;
+use edepot::rules::{Rule, RuleEngine};
+use edepot::storage::Storage;
+use edepot::worker::Worker;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -112,7 +112,9 @@ mod tests {
         drop(temp_file);
 
         let mut file = File::create(&path).unwrap();
-        writeln!(file, r#"
+        writeln!(
+            file,
+            r#"
 [global]
 worker_count = 4
 nft_table = "edepot"
@@ -132,7 +134,9 @@ rule_type = "ip"
 window_secs = 20
 threshold = 8
 block_duration = 3600
-"#).unwrap();
+"#
+        )
+        .unwrap();
 
         let config = Config::from_file(path.to_str().unwrap());
 
@@ -151,7 +155,10 @@ block_duration = 3600
     #[test]
     fn test_rule_parsing() {
         let config = Config {
-            global: edepot::config::GlobalConfig { worker_count: 4, nft_table: "edepot".to_string() },
+            global: edepot::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+            },
             whitelist: edepot::config::WhitelistConfig { cidr: Vec::new() },
             rules: vec![edepot::config::RuleConfig {
                 name: "test_rule".to_string(),
@@ -164,7 +171,10 @@ block_duration = 3600
                 ipv4_prefix: None,
                 ipv6_prefix: None,
             }],
-            memory: edepot::config::MemoryConfig { max_entries: 100000, cleanup_interval: 60 },
+            memory: edepot::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
         };
 
         let rules_result: std::result::Result<Vec<Rule>, edepot::rules::Error> = config

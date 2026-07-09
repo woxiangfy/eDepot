@@ -6,8 +6,8 @@ use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::config::RuleConfig;
-use crate::event::{BanAction, NetworkEvent};
 use crate::error::Result;
+use crate::event::{BanAction, NetworkEvent};
 
 pub mod error;
 pub use error::Error;
@@ -36,13 +36,13 @@ pub enum RuleType {
 
 impl Rule {
     /// 从配置创建规则
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `config` - 规则配置
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回 Rule 结构体，或错误信息
     pub fn from_config(config: &RuleConfig) -> std::result::Result<Self, error::Error> {
         let protocol = match config.protocol.as_str() {
@@ -72,13 +72,13 @@ impl Rule {
     }
 
     /// 判断事件是否匹配规则
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `event` - 网络事件
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 如果事件匹配规则返回 true，否则返回 false
     pub fn matches(&self, event: &NetworkEvent) -> bool {
         if event.protocol != self.protocol {
@@ -95,15 +95,15 @@ impl Rule {
     }
 
     /// 获取规则匹配的键
-    /// 
+    ///
     /// 根据规则类型（IP/CIDR）返回不同的键
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `ip` - IP 地址
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回规则键（IP地址或CIDR）
     pub fn get_key(&self, ip: &IpAddr) -> String {
         match self.rule_type {
@@ -113,7 +113,7 @@ impl Rule {
     }
 
     /// 获取 CIDR 键
-    /// 
+    ///
     /// 将 IP 地址转换为指定前缀的 CIDR 表示
     fn get_cidr_key(&self, ip: &IpAddr) -> String {
         match ip {
@@ -153,9 +153,9 @@ struct RuleState {
 
 impl RuleState {
     /// 创建新的规则状态
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `window_secs` - 滑动窗口大小（秒）
     fn new(window_secs: u32) -> Self {
         Self {
@@ -166,16 +166,16 @@ impl RuleState {
     }
 
     /// 判断是否应该封禁
-    /// 
+    ///
     /// 记录事件并检查是否超过阈值，如果已封禁则检查封禁时长是否过期
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `threshold` - 阈值
     /// * `block_duration` - 封禁时长（秒）
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 如果应该封禁返回 true，否则返回 false
     fn should_ban(&mut self, threshold: u32, block_duration: u32) -> bool {
         if self.banned {
@@ -207,13 +207,17 @@ pub struct RuleEngine {
 
 impl RuleEngine {
     /// 创建新的规则引擎
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `rules` - 规则列表
     /// * `tx` - 封禁动作发送通道（发送到 nftables）
     /// * `storage_tx` - 封禁动作发送通道（发送到存储）
-    pub fn new(rules: Vec<Rule>, tx: mpsc::Sender<BanAction>, storage_tx: mpsc::Sender<BanAction>) -> Self {
+    pub fn new(
+        rules: Vec<Rule>,
+        tx: mpsc::Sender<BanAction>,
+        storage_tx: mpsc::Sender<BanAction>,
+    ) -> Self {
         Self {
             rules,
             states: HashMap::new(),
@@ -223,11 +227,11 @@ impl RuleEngine {
     }
 
     /// 评估网络事件
-    /// 
+    ///
     /// 对每个匹配的规则评估事件，触发封禁动作
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `event` - 网络事件
     pub fn evaluate(&mut self, event: &NetworkEvent) -> Result<()> {
         for rule in &self.rules {
@@ -236,8 +240,13 @@ impl RuleEngine {
             }
 
             let key = rule.get_key(&event.src_ip);
-            let rule_states = self.states.entry(rule.name.clone()).or_insert_with(HashMap::new);
-            let state = rule_states.entry(key.clone()).or_insert_with(|| RuleState::new(rule.window_secs));
+            let rule_states = self
+                .states
+                .entry(rule.name.clone())
+                .or_insert_with(HashMap::new);
+            let state = rule_states
+                .entry(key.clone())
+                .or_insert_with(|| RuleState::new(rule.window_secs));
 
             if state.should_ban(rule.threshold, rule.block_duration) {
                 let ban_action = BanAction::new(
@@ -263,11 +272,11 @@ impl RuleEngine {
     }
 
     /// 清理过期状态
-    /// 
+    ///
     /// 移除过期的规则状态，控制内存使用
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `now` - 当前时间
     /// * `max_entries` - 最大条目数
     pub fn cleanup(&mut self, now: Instant, max_entries: usize) {
@@ -292,7 +301,9 @@ impl RuleEngine {
                     .map(|(k, _)| k.clone())
                     .collect();
 
-                let to_remove = keys_to_remove.len().saturating_sub(max_entries / self.rules.len());
+                let to_remove = keys_to_remove
+                    .len()
+                    .saturating_sub(max_entries / self.rules.len());
                 for key in keys_to_remove.into_iter().take(to_remove) {
                     rule_states.remove(&key);
                 }
@@ -515,19 +526,17 @@ mod tests {
 
     #[test]
     fn test_rule_engine_new() {
-        let rules = vec![
-            Rule {
-                name: "rule1".to_string(),
-                protocol: 6,
-                ports: Some(vec![22]),
-                rule_type: RuleType::Ip,
-                window_secs: 20,
-                threshold: 10,
-                block_duration: 3600,
-                ipv4_prefix: 24,
-                ipv6_prefix: 64,
-            },
-        ];
+        let rules = vec![Rule {
+            name: "rule1".to_string(),
+            protocol: 6,
+            ports: Some(vec![22]),
+            rule_type: RuleType::Ip,
+            window_secs: 20,
+            threshold: 10,
+            block_duration: 3600,
+            ipv4_prefix: 24,
+            ipv6_prefix: 64,
+        }];
 
         let (tx, _rx) = mpsc::channel(100);
         let (storage_tx, _storage_rx) = mpsc::channel(100);
@@ -540,19 +549,17 @@ mod tests {
 
     #[test]
     fn test_rule_engine_evaluate_trigger_ban() {
-        let rules = vec![
-            Rule {
-                name: "test_rule".to_string(),
-                protocol: 6,
-                ports: Some(vec![22]),
-                rule_type: RuleType::Ip,
-                window_secs: 60,
-                threshold: 3,
-                block_duration: 3600,
-                ipv4_prefix: 24,
-                ipv6_prefix: 64,
-            },
-        ];
+        let rules = vec![Rule {
+            name: "test_rule".to_string(),
+            protocol: 6,
+            ports: Some(vec![22]),
+            rule_type: RuleType::Ip,
+            window_secs: 60,
+            threshold: 3,
+            block_duration: 3600,
+            ipv4_prefix: 24,
+            ipv6_prefix: 64,
+        }];
 
         let (tx, mut rx) = mpsc::channel(100);
         let (storage_tx, mut storage_rx) = mpsc::channel(100);
@@ -577,19 +584,17 @@ mod tests {
 
     #[test]
     fn test_rule_engine_evaluate_no_ban() {
-        let rules = vec![
-            Rule {
-                name: "test_rule".to_string(),
-                protocol: 6,
-                ports: Some(vec![22]),
-                rule_type: RuleType::Ip,
-                window_secs: 60,
-                threshold: 5,
-                block_duration: 3600,
-                ipv4_prefix: 24,
-                ipv6_prefix: 64,
-            },
-        ];
+        let rules = vec![Rule {
+            name: "test_rule".to_string(),
+            protocol: 6,
+            ports: Some(vec![22]),
+            rule_type: RuleType::Ip,
+            window_secs: 60,
+            threshold: 5,
+            block_duration: 3600,
+            ipv4_prefix: 24,
+            ipv6_prefix: 64,
+        }];
 
         let (tx, mut rx) = mpsc::channel(100);
         let (storage_tx, mut storage_rx) = mpsc::channel(100);
@@ -611,19 +616,17 @@ mod tests {
 
     #[test]
     fn test_rule_engine_evaluate_no_match() {
-        let rules = vec![
-            Rule {
-                name: "test_rule".to_string(),
-                protocol: 6,
-                ports: Some(vec![22]),
-                rule_type: RuleType::Ip,
-                window_secs: 60,
-                threshold: 1,
-                block_duration: 3600,
-                ipv4_prefix: 24,
-                ipv6_prefix: 64,
-            },
-        ];
+        let rules = vec![Rule {
+            name: "test_rule".to_string(),
+            protocol: 6,
+            ports: Some(vec![22]),
+            rule_type: RuleType::Ip,
+            window_secs: 60,
+            threshold: 1,
+            block_duration: 3600,
+            ipv4_prefix: 24,
+            ipv6_prefix: 64,
+        }];
 
         let (tx, mut rx) = mpsc::channel(100);
         let (storage_tx, mut storage_rx) = mpsc::channel(100);
@@ -644,19 +647,17 @@ mod tests {
 
     #[test]
     fn test_rule_engine_cleanup() {
-        let rules = vec![
-            Rule {
-                name: "test_rule".to_string(),
-                protocol: 6,
-                ports: Some(vec![22]),
-                rule_type: RuleType::Ip,
-                window_secs: 60,
-                threshold: 10,
-                block_duration: 3600,
-                ipv4_prefix: 24,
-                ipv6_prefix: 64,
-            },
-        ];
+        let rules = vec![Rule {
+            name: "test_rule".to_string(),
+            protocol: 6,
+            ports: Some(vec![22]),
+            rule_type: RuleType::Ip,
+            window_secs: 60,
+            threshold: 10,
+            block_duration: 3600,
+            ipv4_prefix: 24,
+            ipv6_prefix: 64,
+        }];
 
         let (tx, _rx) = mpsc::channel(100);
         let (storage_tx, _storage_rx) = mpsc::channel(100);
