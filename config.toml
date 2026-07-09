@@ -1,0 +1,49 @@
+[global]
+worker_count = 4
+nft_table = "edepot"
+
+[whitelist]
+cidr = [
+    "127.0.0.0/8",
+    "::1/128"
+]
+
+[memory]
+max_entries = 100000
+cleanup_interval = 60
+
+[[rules]]
+name = "ssh_bruteforce"
+protocol = "tcp"
+ports = [22]
+rule_type = "ip"
+window_secs = 20
+threshold = 8
+block_duration = 3600
+
+[[rules]]
+name = "http_cc"
+protocol = "tcp"
+ports = [80, 443]
+rule_type = "ip"
+window_secs = 10
+threshold = 100
+block_duration = 7200
+
+[[rules]]
+name = "tcp_scan"
+protocol = "tcp"
+rule_type = "cidr"
+ipv4_prefix = 24
+ipv6_prefix = 64
+window_secs = 60
+threshold = 200
+block_duration = 86400
+
+[[rules]]
+name = "udp_scan"
+protocol = "udp"
+rule_type = "ip"
+window_secs = 30
+threshold = 100
+block_duration = 3600

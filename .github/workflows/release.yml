@@ -1,0 +1,100 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: bpfel-unknown-none
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libssl-dev \
+            pkg-config \
+            nftables \
+            libsqlite3-dev \
+            libelf-dev \
+            zlib1g-dev \
+            llvm-dev \
+            libclang-dev \
+            clang
+
+      - name: Install bpf-linker
+        run: cargo install bpf-linker
+
+      - name: Build release binary (with eBPF)
+        run: cargo build --release --features ebpf
+
+      - name: Verify binary exists
+        run: test -f target/release/edepot
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create release archive
+        run: |
+          mkdir -p release/edepot-${{ steps.version.outputs.version }}
+          cp target/release/edepot release/edepot-${{ steps.version.outputs.version }}/
+          cp config.toml release/edepot-${{ steps.version.outputs.version }}/
+          cp README.md release/edepot-${{ steps.version.outputs.version }}/ 2>/dev/null || true
+          cp fa.md release/edepot-${{ steps.version.outputs.version }}/ 2>/dev/null || true
+          cd release
+          tar -czf edepot-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz edepot-${{ steps.version.outputs.version }}
+          sha256sum edepot-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz > edepot-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/edepot-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+            release/edepot-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+          body: |
+            ## eDepot ${{ steps.version.outputs.version }}
+
+            ### 安装说明
+
+            ```bash
+            tar -xzf edepot-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
+            cd edepot-${{ steps.version.outputs.version }}
+            sudo ./edepot
+            ```
+
+            ### 系统要求
+
+            - Linux Kernel >= 5.4
+            - nftables 已安装
+            - root 权限运行
+            - eBPF 支持
+
+            ### 验证下载
+
+            ```bash
+            sha256sum -c edepot-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz.sha256
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

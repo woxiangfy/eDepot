@@ -1,0 +1,38 @@
+[package]
+name = "edepot"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+rusqlite = { version = "0.31", features = ["chrono", "bundled"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+ipnet = "2"
+log = "0.4"
+env_logger = "0.11"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+crossbeam-channel = "0.5"
+futures = "0.3"
+hex = "0.4"
+bytes = "1"
+aya = { version = "0.13", default-features = false, features = ["async_tokio"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[workspace]
+members = ["ebpf"]
+
+[build-dependencies]
+
+[features]
+default = []
+ebpf = ["dep:aya"]
+
+[[bin]]
+name = "edepot"
+path = "src/main.rs"

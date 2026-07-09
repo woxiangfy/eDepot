@@ -1,0 +1,11 @@
+[package]
+name = "edepot-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya-ebpf = "0.2"
+aya-log-ebpf = "0.2"
+
+[build-dependencies]
+aya-build = "0.2"

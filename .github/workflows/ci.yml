@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+
+jobs:
+  check:
+    name: Code Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          targets: bpfel-unknown-none
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libssl-dev \
+            pkg-config \
+            libsqlite3-dev \
+            libelf-dev \
+            zlib1g-dev \
+            llvm-dev \
+            libclang-dev \
+            clang
+
+      - name: Install bpf-linker
+        run: cargo install bpf-linker
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy check (default features)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy check (ebpf feature)
+        run: cargo clippy --all-targets --features ebpf -- -D warnings
+
+      - name: Check compilation (default features)
+        run: cargo check --release
+
+      - name: Check compilation (ebpf feature)
+        run: cargo check --release --features ebpf
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libssl-dev \
+            pkg-config \
+            libsqlite3-dev \
+            libelf-dev \
+            zlib1g-dev \
+            llvm-dev \
+            libclang-dev \
+            clang
+
+      - name: Install bpf-linker
+        run: cargo install bpf-linker
+
+      - name: Run tests (default features)
+        run: cargo test --all
+
+      - name: Run tests (ebpf feature)
+        run: cargo test --all --features ebpf
+
+      - name: Run doc tests
+        run: cargo test --doc
