@@ -18,7 +18,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: nightly
+          targets: bpfel-unknown-none
+          components: rust-src
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -42,10 +44,11 @@ jobs:
       - name: Install eBPF toolchain
         run: |
           cargo install bpf-linker
-          rustup target add bpfel-unknown-none
 
       - name: Build release binary with eBPF
         run: cargo build --release --features ebpf
+        env:
+          RUSTUP_TOOLCHAIN: nightly
 
       - name: Verify binary exists
         run: test -f target/release/edepot
