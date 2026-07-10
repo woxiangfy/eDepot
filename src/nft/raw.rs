@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex};
 use ipnet::IpNet;
 use nftables::helper::{apply_ruleset, get_current_ruleset, NftablesError};
 use nftables::schema::{
-    Chain, Element, NfCmd, NfListObject, Nftables, Rule, Set, SetFlag, SetType, SetTypeValue,
-    Table,
+    Chain, Element, NfCmd, NfListObject, Nftables, Rule, Set, SetFlag, SetType, SetTypeValue, Table,
 };
 use nftables::stmt::{Match, Operator, Statement};
 use nftables::types::{NfChainPolicy, NfFamily, NfHook};

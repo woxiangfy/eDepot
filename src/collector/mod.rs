@@ -121,7 +121,8 @@ impl Collector {
                     event.src_ip, event.dst_port, event.protocol
                 );
                 if self.tx.try_send(event).is_err() {
-                    self.dropped_events.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.dropped_events
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     warn!("Channel full, dropping event");
                 }
             }
