@@ -594,7 +594,9 @@ mod tests {
         let ip1 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
         let ip2 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 2));
 
-        let cidr = IpNet::V6(ipnet::Ipv6Net::new(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 64).unwrap());
+        let cidr = IpNet::V6(
+            ipnet::Ipv6Net::new(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 64).unwrap(),
+        );
 
         assert_eq!(rule.get_key(&ip1), RuleKey::Cidr(cidr));
         assert_eq!(rule.get_key(&ip2), RuleKey::Cidr(cidr));
