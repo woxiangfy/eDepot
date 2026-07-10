@@ -19,7 +19,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: nightly
-          targets: bpfel-unknown-none
           components: rust-src
 
       - name: Cache cargo registry

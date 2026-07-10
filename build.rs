@@ -43,6 +43,7 @@ fn build_ebpf_linux(ebpf_dir: &PathBuf, out_dir: &Path) -> PathBuf {
         .arg("bpfel-unknown-none")
         .current_dir(ebpf_dir)
         .env("CARGO_MANIFEST_DIR", ebpf_dir)
+        .env("RUSTC_BOOTSTRAP", "1")
         .status()
         .expect("Failed to build eBPF program");
 
