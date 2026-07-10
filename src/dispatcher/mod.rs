@@ -74,15 +74,21 @@ impl Dispatcher {
     ///
     /// 返回 Worker 的索引
     fn select_worker(&self, event: &NetworkEvent) -> usize {
-        let bytes = match event.src_ip {
-            IpAddr::V4(ip) => ip.octets().to_vec(),
-            IpAddr::V6(ip) => ip.octets().to_vec(),
-        };
-
         let mut hash: u64 = 0xcbf29ce484222325;
-        for byte in &bytes {
-            hash ^= *byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
+
+        match event.src_ip {
+            IpAddr::V4(ip) => {
+                for &byte in ip.octets().iter() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(0x100000001b3);
+                }
+            }
+            IpAddr::V6(ip) => {
+                for &byte in ip.octets().iter() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(0x100000001b3);
+                }
+            }
         }
 
         (hash % self.worker_senders.len() as u64) as usize

@@ -28,9 +28,21 @@ impl SlidingWindow {
     }
 
     pub fn count(&self) -> u32 {
-        let mut window = self.clone();
-        window.rotate();
-        window.total
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_update).as_nanos() as u64;
+
+        if elapsed < self.bucket_time {
+            return self.total;
+        }
+
+        let buckets_to_rotate = (elapsed / self.bucket_time) as usize;
+        let effective_rotations = buckets_to_rotate.min(BUCKET_COUNT);
+
+        let mut sum = 0;
+        for i in effective_rotations..BUCKET_COUNT {
+            sum += self.buckets[i];
+        }
+        sum
     }
 
     pub fn reset(&mut self) {

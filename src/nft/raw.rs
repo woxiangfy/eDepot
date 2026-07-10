@@ -9,6 +9,12 @@ use nftables::types::{NfChainPolicy, NfFamily, NfHook};
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum BanEntry {
+    Ip(IpAddr),
+    Cidr(IpNet),
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("nftables client error: {0}")]
@@ -52,7 +58,7 @@ pub struct NftRawController {
     table: String,
     ipv4_set: String,
     ipv6_set: String,
-    banned_ips: Arc<Mutex<HashMap<IpAddr, u32>>>,
+    banned_entries: Arc<Mutex<HashMap<BanEntry, u32>>>,
 }
 
 impl NftRawController {
@@ -61,21 +67,21 @@ impl NftRawController {
             table: table.to_string(),
             ipv4_set: format!("{}_ipv4", table),
             ipv6_set: format!("{}_ipv6", table),
-            banned_ips: Arc::new(Mutex::new(HashMap::new())),
+            banned_entries: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
     pub fn sync_from_nftables(&self) -> Result<()> {
         let elements = self.get_all_set_elements()?;
-        let mut banned = self.banned_ips.lock().unwrap();
+        let mut banned = self.banned_entries.lock().unwrap();
         banned.clear();
 
         for elem in elements {
-            banned.insert(elem, 0);
+            banned.insert(BanEntry::Ip(elem), 0);
         }
 
         debug!(
-            "Synced {} elements from nftables to local banned_ips",
+            "Synced {} elements from nftables to local banned_entries",
             banned.len()
         );
         Ok(())
@@ -291,17 +297,21 @@ impl NftRawController {
             IpAddr::V6(_) => (self.ipv6_set.clone(), ip.to_string()),
         };
 
-        if self.is_ip_conflict_with_cidr(ip) {
-            warn!(
-                "IP {} conflicts with existing CIDR, skipping ban",
-                ip
-            );
-            return Err(Error::IpCidrConflict);
-        }
+        {
+            let banned = self.banned_entries.lock().unwrap();
+            if self.is_ip_conflict_with_cidr_cached(ip, &banned) {
+                warn!(
+                    "IP {} conflicts with existing CIDR, skipping ban",
+                    ip
+                );
+                return Err(Error::IpCidrConflict);
+            }
 
-        if self.is_ip_banned(ip) {
-            debug!("IP {} already banned, updating duration", ip);
-            self.remove_ip_from_set(ip)?;
+            if banned.contains_key(&BanEntry::Ip(ip)) {
+                drop(banned);
+                debug!("IP {} already banned, updating duration", ip);
+                self.remove_ip_from_set(ip)?;
+            }
         }
 
         let elem = Element {
@@ -317,7 +327,7 @@ impl NftRawController {
 
         match apply_ruleset(&nftables) {
             Ok(_) => {
-                self.banned_ips.lock().unwrap().insert(ip, duration);
+                self.banned_entries.lock().unwrap().insert(BanEntry::Ip(ip), duration);
                 debug!("Added IP {} to set {} with {}s duration", ip, set_name, duration);
                 Ok(())
             }
@@ -353,8 +363,8 @@ impl NftRawController {
 
         match apply_ruleset(&nftables) {
             Ok(_) => {
-                let mut banned = self.banned_ips.lock().unwrap();
-                banned.insert(cidr.network().into(), duration);
+                let mut banned = self.banned_entries.lock().unwrap();
+                banned.insert(BanEntry::Cidr(cidr), duration);
                 debug!("Added CIDR {} to set {} with {}s duration", cidr, set_name, duration);
                 Ok(())
             }
@@ -371,29 +381,26 @@ impl NftRawController {
 
     fn remove_ips_in_cidr(&self, cidr: &IpNet) -> Result<()> {
         let mut ips_to_remove: Vec<IpAddr> = Vec::new();
+        let mut cidrs_to_remove: Vec<IpNet> = Vec::new();
 
-        let banned = self.banned_ips.lock().unwrap();
-        ips_to_remove.extend(
-            banned
-                .keys()
-                .filter(|ip| cidr.contains(*ip))
-                .cloned()
-                .collect::<Vec<IpAddr>>(),
-        );
-        drop(banned);
-
-        let nft_elements = self.get_all_set_elements()?;
-        for elem in nft_elements {
-            if cidr.contains(&elem) && !ips_to_remove.contains(&elem) {
-                ips_to_remove.push(elem);
+        let banned = self.banned_entries.lock().unwrap();
+        for (entry, _) in banned.iter() {
+            match entry {
+                BanEntry::Ip(ip) => {
+                    if cidr.contains(ip) {
+                        ips_to_remove.push(*ip);
+                    }
+                }
+                BanEntry::Cidr(entry_cidr) => {
+                    if cidr.contains(&entry_cidr.network())
+                        && entry_cidr.prefix_len() >= cidr.prefix_len()
+                    {
+                        cidrs_to_remove.push(*entry_cidr);
+                    }
+                }
             }
         }
-
-        debug!(
-            "Removing {} IPs that conflict with CIDR {}",
-            ips_to_remove.len(),
-            cidr
-        );
+        drop(banned);
 
         for ip in ips_to_remove {
             if let Err(e) = self.remove_ip_from_set(ip) {
@@ -401,32 +408,23 @@ impl NftRawController {
             }
         }
 
+        for cidr_to_remove in cidrs_to_remove {
+            if let Err(e) = self.remove_cidr_from_set(cidr_to_remove) {
+                warn!("Failed to remove CIDR {} before adding CIDR: {}", cidr_to_remove, e);
+            }
+        }
+
         Ok(())
     }
 
-    fn is_ip_conflict_with_cidr(&self, ip: IpAddr) -> bool {
-        let banned = self.banned_ips.lock().unwrap();
-        for (key, _) in banned.iter() {
-            if let Ok(cidr) = key.to_string().parse::<IpNet>() {
+    fn is_ip_conflict_with_cidr_cached(&self, ip: IpAddr, banned: &HashMap<BanEntry, u32>) -> bool {
+        for (entry, _) in banned.iter() {
+            if let BanEntry::Cidr(cidr) = entry {
                 if cidr.contains(&ip) {
                     return true;
                 }
             }
         }
-
-        let nft_elements = match self.get_all_set_elements() {
-            Ok(elems) => elems,
-            Err(_) => return false,
-        };
-
-        for elem in nft_elements {
-            if let Ok(cidr) = elem.to_string().parse::<IpNet>() {
-                if cidr.contains(&ip) {
-                    return true;
-                }
-            }
-        }
-
         false
     }
 
@@ -449,7 +447,7 @@ impl NftRawController {
 
         match apply_ruleset(&nftables) {
             Ok(_) => {
-                self.banned_ips.lock().unwrap().remove(&ip);
+                self.banned_entries.lock().unwrap().remove(&BanEntry::Ip(ip));
                 debug!("Removed IP {} from set {}", ip, set_name);
                 Ok(())
             }
@@ -484,7 +482,7 @@ impl NftRawController {
 
         match apply_ruleset(&nftables) {
             Ok(_) => {
-                self.banned_ips.lock().unwrap().remove(&cidr.network().into());
+                self.banned_entries.lock().unwrap().remove(&BanEntry::Cidr(cidr));
                 debug!("Removed CIDR {} from set {}", cidr, set_name);
                 Ok(())
             }
@@ -501,42 +499,21 @@ impl NftRawController {
     }
 
     pub fn get_banned_ips(&self) -> Result<Vec<(IpAddr, u32)>> {
-        let mut result = Vec::new();
+        let banned = self.banned_entries.lock().unwrap();
+        let mut result = Vec::with_capacity(banned.len());
 
-        match get_current_ruleset() {
-            Ok(nftables) => {
-                for obj in nftables.objects.into_owned() {
-                    if let NfObject::ListObject(NfListObject::Set(set)) = obj {
-                        if set.table.as_ref() == self.table
-                            && (set.name.as_ref() == self.ipv4_set || set.name.as_ref() == self.ipv6_set)
-                        {
-                            if let Some(elems) = set.elem {
-                                for elem in elems.into_owned() {
-                                    if let nftables::expr::Expression::String(s) = elem {
-                                        if let Ok(ip) = s.parse::<Ipv4Addr>() {
-                                            result.push((IpAddr::V4(ip), 0));
-                                        } else if let Ok(ip) = s.parse::<Ipv6Addr>() {
-                                            result.push((IpAddr::V6(ip), 0));
-                                        } else if let Ok(cidr) = s.parse::<IpNet>() {
-                                            result.push((cidr.network().into(), 0));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+        for (entry, duration) in banned.iter() {
+            match entry {
+                BanEntry::Ip(ip) => {
+                    result.push((*ip, *duration));
                 }
-            }
-            Err(e) => {
-                debug!("Failed to get current ruleset: {}", e);
+                BanEntry::Cidr(cidr) => {
+                    result.push((cidr.network().into(), *duration));
+                }
             }
         }
 
         Ok(result)
-    }
-
-    fn is_ip_banned(&self, ip: IpAddr) -> bool {
-        self.banned_ips.lock().unwrap().contains_key(&ip)
     }
 }
 

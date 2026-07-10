@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,37 @@ pub use error::Error;
 
 pub mod sliding_window;
 use sliding_window::SlidingWindow;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RuleKey {
+    Ip(IpAddr),
+    Cidr(IpNet),
+}
+
+impl Hash for RuleKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            RuleKey::Ip(ip) => {
+                match ip {
+                    IpAddr::V4(ip) => ip.octets().hash(state),
+                    IpAddr::V6(ip) => ip.octets().hash(state),
+                }
+            }
+            RuleKey::Cidr(cidr) => {
+                match cidr {
+                    IpNet::V4(cidr) => {
+                        cidr.network().octets().hash(state);
+                        state.write_u8(cidr.prefix_len());
+                    }
+                    IpNet::V6(cidr) => {
+                        cidr.network().octets().hash(state);
+                        state.write_u8(cidr.prefix_len());
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Rule {
@@ -107,42 +139,25 @@ impl Rule {
         true
     }
 
-    pub fn get_key(&self, ip: &IpAddr) -> String {
-        let key = match self.rule_type {
-            RuleType::Ip => ip.to_string(),
-            RuleType::Cidr => self.get_cidr_key(ip),
-        };
-        debug!("Rule {}: IP {} -> key {}", self.name, ip, key);
-        key
+    pub fn get_key(&self, ip: &IpAddr) -> RuleKey {
+        match self.rule_type {
+            RuleType::Ip => RuleKey::Ip(*ip),
+            RuleType::Cidr => RuleKey::Cidr(self.get_cidr(ip)),
+        }
     }
 
-    /// 获取 CIDR 键
-    ///
-    /// 将 IP 地址转换为指定前缀的 CIDR 表示
-    fn get_cidr_key(&self, ip: &IpAddr) -> String {
+    pub fn get_cidr(&self, ip: &IpAddr) -> IpNet {
         match ip {
             IpAddr::V4(ip) => {
                 let prefix = self.ipv4_prefix;
                 let mask = u32::MAX << (32 - prefix);
                 let masked = u32::from(*ip) & mask;
-                format!("{}/{prefix}", Ipv4Addr::from(masked))
+                IpNet::V4(ipnet::Ipv4Net::new(Ipv4Addr::from(masked), prefix).unwrap())
             }
             IpAddr::V6(ip) => {
                 let prefix = self.ipv6_prefix;
-                let mask_bits = prefix / 8;
-                let remainder = prefix % 8;
-                let mut bytes = ip.octets();
-                if remainder > 0 {
-                    bytes[mask_bits as usize] &= 0xFF << (8 - remainder);
-                    for i in (mask_bits + 1)..16 {
-                        bytes[i as usize] = 0;
-                    }
-                } else {
-                    for i in mask_bits..16 {
-                        bytes[i as usize] = 0;
-                    }
-                }
-                format!("{}/{prefix}", Ipv6Addr::from(bytes))
+                let cidr = ipnet::Ipv6Net::new(*ip, prefix).unwrap();
+                IpNet::V6(ipnet::Ipv6Net::new(cidr.network(), prefix).unwrap())
             }
         }
     }
@@ -204,7 +219,7 @@ impl RuleState {
 
 pub struct RuleEngine {
     rules: Vec<Rule>,
-    states: HashMap<String, HashMap<String, RuleState>>,
+    states: HashMap<String, HashMap<RuleKey, RuleState>>,
     tx: mpsc::Sender<BanAction>,
     storage_tx: mpsc::Sender<BanAction>,
 }
@@ -244,11 +259,10 @@ impl RuleEngine {
             }
 
             let key = rule.get_key(&event.src_ip);
-            debug!("Rule {}: using key {}", rule.name, key);
 
             let rule_states = self.states.entry(rule.name.clone()).or_default();
             let state = rule_states
-                .entry(key.clone())
+                .entry(key)
                 .or_insert_with(|| RuleState::new(rule.window_secs));
 
             debug!(
@@ -272,8 +286,7 @@ impl RuleEngine {
                         format!("Rule {} triggered for {}", rule.name, event.src_ip),
                     ),
                     RuleType::Cidr => {
-                        let cidr_str = rule.get_key(&event.src_ip);
-                        let cidr: IpNet = cidr_str.parse().unwrap();
+                        let cidr = rule.get_cidr(&event.src_ip);
                         BanAction::new_cidr(
                             event.src_ip,
                             rule.name.clone(),
@@ -535,7 +548,7 @@ mod tests {
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
         let key = rule.get_key(&ip);
 
-        assert_eq!(key, "192.168.1.100");
+        assert_eq!(key, RuleKey::Ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))));
     }
 
     #[test]
@@ -556,9 +569,12 @@ mod tests {
         let ip2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 200));
         let ip3 = IpAddr::V4(Ipv4Addr::new(192, 168, 2, 100));
 
-        assert_eq!(rule.get_key(&ip1), "192.168.1.0/24");
-        assert_eq!(rule.get_key(&ip2), "192.168.1.0/24");
-        assert_eq!(rule.get_key(&ip3), "192.168.2.0/24");
+        let cidr1 = IpNet::V4(ipnet::Ipv4Net::new(Ipv4Addr::new(192, 168, 1, 0), 24).unwrap());
+        let cidr2 = IpNet::V4(ipnet::Ipv4Net::new(Ipv4Addr::new(192, 168, 2, 0), 24).unwrap());
+
+        assert_eq!(rule.get_key(&ip1), RuleKey::Cidr(cidr1));
+        assert_eq!(rule.get_key(&ip2), RuleKey::Cidr(cidr1));
+        assert_eq!(rule.get_key(&ip3), RuleKey::Cidr(cidr2));
     }
 
     #[test]
@@ -578,8 +594,10 @@ mod tests {
         let ip1 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
         let ip2 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 2));
 
-        assert_eq!(rule.get_key(&ip1), "2001:db8::/64");
-        assert_eq!(rule.get_key(&ip2), "2001:db8::/64");
+        let cidr = IpNet::V6(ipnet::Ipv6Net::new(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 64).unwrap());
+
+        assert_eq!(rule.get_key(&ip1), RuleKey::Cidr(cidr));
+        assert_eq!(rule.get_key(&ip2), RuleKey::Cidr(cidr));
     }
 
     #[test]

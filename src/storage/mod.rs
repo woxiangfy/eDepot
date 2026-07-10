@@ -1,4 +1,4 @@
-﻿use std::path::Path;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
@@ -165,6 +165,38 @@ impl Storage {
         );
         debug!("Ban record inserted with ID: {}", id);
         Ok(id)
+    }
+
+    pub fn insert_ban_records_batch(&self, bans: &[BanAction]) -> Result<usize> {
+        if bans.is_empty() {
+            return Ok(0);
+        }
+
+        debug!("Inserting {} ban records in batch", bans.len());
+
+        let now = Utc::now().timestamp();
+        let mut conn = self.conn.lock().unwrap();
+
+        let tx = conn.transaction()?;
+
+        for ban in bans {
+            tx.execute(
+                "INSERT INTO ban_records (ip, duration, reason, status, created_at)
+                 VALUES (?, ?, ?, ?, ?)",
+                params![
+                    ban.src_ip.to_string(),
+                    ban.duration,
+                    ban.reason,
+                    "active",
+                    now
+                ],
+            )?;
+        }
+
+        tx.commit()?;
+
+        info!("Batch inserted {} ban records", bans.len());
+        Ok(bans.len())
     }
 
     pub fn update_ban_status(&self, ip: &str, status: &str) -> Result<()> {

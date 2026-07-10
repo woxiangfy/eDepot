@@ -5,6 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::SystemTime;
 
 use tokio::sync::mpsc;
+use tokio::task::spawn_blocking;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
@@ -58,37 +59,72 @@ impl Collector {
     }
 
     async fn poll_once(&mut self) -> Result<()> {
+        let tcp_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/tcp", 6))
+            .await
+            .map_err(|e| {
+                error!("Failed to process /proc/net/tcp: {}", e);
+                crate::error::Error::ChannelSendFailed
+            })?;
+
+        let tcp6_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/tcp6", 6))
+            .await
+            .map_err(|e| {
+                error!("Failed to process /proc/net/tcp6: {}", e);
+                crate::error::Error::ChannelSendFailed
+            })?;
+
+        let udp_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp", 17))
+            .await
+            .map_err(|e| {
+                error!("Failed to process /proc/net/udp: {}", e);
+                crate::error::Error::ChannelSendFailed
+            })?;
+
+        let udp6_results =
+            spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp6", 17))
+                .await
+                .map_err(|e| {
+                    error!("Failed to process /proc/net/udp6: {}", e);
+                    crate::error::Error::ChannelSendFailed
+                })?;
+
         let mut new_connections = HashSet::new();
 
-        self.process_proc_file("/proc/net/tcp", 6, &mut new_connections)
-            .await?;
-        self.process_proc_file("/proc/net/tcp6", 6, &mut new_connections)
-            .await?;
-        self.process_proc_file("/proc/net/udp", 17, &mut new_connections)
-            .await?;
-        self.process_proc_file("/proc/net/udp6", 17, &mut new_connections)
-            .await?;
+        for (key, event) in tcp_results
+            .into_iter()
+            .chain(tcp6_results)
+            .chain(udp_results)
+            .chain(udp6_results)
+        {
+            new_connections.insert(key.clone());
+
+            if !self.previous_connections.contains(&key) {
+                debug!(
+                    "New connection: {} -> port {} (proto {})",
+                    event.src_ip, event.dst_port, event.protocol
+                );
+                if self.tx.send(event).await.is_err() {
+                    warn!("Failed to send event to channel");
+                }
+            }
+        }
 
         self.previous_connections = new_connections;
         Ok(())
     }
 
-    async fn process_proc_file(
-        &self,
-        path: &str,
-        protocol: u8,
-        new_connections: &mut HashSet<ConnectionKey>,
-    ) -> Result<()> {
+    fn process_proc_file_sync(path: &str, protocol: u8) -> Vec<(ConnectionKey, NetworkEvent)> {
         let file = match File::open(path) {
             Ok(f) => f,
             Err(e) => {
                 debug!("Could not open {}: {}", path, e);
-                return Ok(());
+                return Vec::new();
             }
         };
 
         let reader = BufReader::new(file);
         let mut line_num = 0;
+        let mut results = Vec::new();
 
         for line in reader.lines() {
             let line = match line {
@@ -104,31 +140,24 @@ impl Collector {
                 continue;
             }
 
-            if let Some(event) = self.parse_line(&line, protocol) {
+            if let Some(event) = Self::parse_line_static(&line, protocol) {
                 let key = ConnectionKey {
                     src_ip: event.src_ip,
                     dst_port: event.dst_port,
                     protocol: event.protocol,
                 };
-
-                new_connections.insert(key.clone());
-
-                if !self.previous_connections.contains(&key) {
-                    debug!(
-                        "New connection from {}: {} -> port {} (proto {})",
-                        path, event.src_ip, event.dst_port, event.protocol
-                    );
-                    if self.tx.send(event).await.is_err() {
-                        warn!("Failed to send event to channel");
-                    }
-                }
+                results.push((key, event));
             }
         }
 
-        Ok(())
+        results
     }
 
     fn parse_line(&self, line: &str, protocol: u8) -> Option<NetworkEvent> {
+        Self::parse_line_static(line, protocol)
+    }
+
+    fn parse_line_static(line: &str, protocol: u8) -> Option<NetworkEvent> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 3 {
             return None;
@@ -137,7 +166,7 @@ impl Collector {
         let local_address = parts[1];
         let remote_address = parts[2];
 
-        let (_local_ip, local_port) = match self.parse_address(local_address) {
+        let (_local_ip, local_port) = match Self::parse_address_static(local_address) {
             Some(ip_port) => ip_port,
             None => {
                 debug!("Failed to parse local address: {}", local_address);
@@ -145,7 +174,7 @@ impl Collector {
             }
         };
 
-        let (remote_ip, _) = match self.parse_address(remote_address) {
+        let (remote_ip, _) = match Self::parse_address_static(remote_address) {
             Some(ip_port) => ip_port,
             None => {
                 debug!("Failed to parse remote address: {}", remote_address);
@@ -165,6 +194,10 @@ impl Collector {
     }
 
     fn parse_address(&self, address: &str) -> Option<(IpAddr, u16)> {
+        Self::parse_address_static(address)
+    }
+
+    fn parse_address_static(address: &str) -> Option<(IpAddr, u16)> {
         let parts: Vec<&str> = address.split(':').collect();
         if parts.len() != 2 {
             return None;
@@ -182,10 +215,10 @@ impl Collector {
         };
 
         if ip_hex.len() == 8 {
-            let ip = self.parse_ipv4(ip_hex);
+            let ip = Self::parse_ipv4_static(ip_hex);
             ip.map(|ip| (IpAddr::V4(ip), port))
         } else if ip_hex.len() == 32 {
-            let ip = self.parse_ipv6(ip_hex);
+            let ip = Self::parse_ipv6_static(ip_hex);
             ip.map(|ip| (IpAddr::V6(ip), port))
         } else {
             debug!("Unknown address format: {}", ip_hex);
@@ -194,6 +227,10 @@ impl Collector {
     }
 
     fn parse_ipv4(&self, hex: &str) -> Option<Ipv4Addr> {
+        Self::parse_ipv4_static(hex)
+    }
+
+    fn parse_ipv4_static(hex: &str) -> Option<Ipv4Addr> {
         let bytes: Vec<u8> = (0..4)
             .map(|i| {
                 let start = i * 2;
@@ -210,6 +247,10 @@ impl Collector {
     }
 
     fn parse_ipv6(&self, hex: &str) -> Option<Ipv6Addr> {
+        Self::parse_ipv6_static(hex)
+    }
+
+    fn parse_ipv6_static(hex: &str) -> Option<Ipv6Addr> {
         let mut segments: Vec<u16> = Vec::with_capacity(8);
 
         for i in 0..8 {
