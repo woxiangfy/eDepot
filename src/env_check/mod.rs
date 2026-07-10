@@ -103,7 +103,7 @@ pub fn print_environment_report() {
                 "Sysctl Settings: {}",
                 if result.sysctl_check { "PASS" } else { "FAIL" }
             );
-            println!("");
+            println!();
             if is_environment_supported() {
                 println!("Environment: SUPPORTED - eDepot can run");
             } else {

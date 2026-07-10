@@ -120,7 +120,7 @@ impl Storage {
         rule: &str,
         count: u32,
     ) -> Result<i64> {
-        let now = Utc::now().timestamp() as i64;
+        let now = Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
@@ -142,7 +142,7 @@ impl Storage {
     ///
     /// 返回插入记录的 ID
     pub fn insert_ban_record(&self, ban: &BanAction) -> Result<i64> {
-        let now = Utc::now().timestamp() as i64;
+        let now = Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
@@ -208,7 +208,7 @@ impl Storage {
                 port: row.get(3)?,
                 rule: row.get(4)?,
                 count: row.get(5)?,
-                created_at: DateTime::from_timestamp(row.get(6)?, 0).unwrap_or_else(|| Utc::now()),
+                created_at: DateTime::from_timestamp(row.get(6)?, 0).unwrap_or_else(Utc::now),
             });
         }
 
@@ -241,8 +241,7 @@ impl Storage {
                     duration: row.get(2)?,
                     reason: row.get(3)?,
                     status: row.get(4)?,
-                    created_at: DateTime::from_timestamp(row.get(5)?, 0)
-                        .unwrap_or_else(|| Utc::now()),
+                    created_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(Utc::now),
                 });
             }
         } else {
@@ -258,8 +257,7 @@ impl Storage {
                     duration: row.get(2)?,
                     reason: row.get(3)?,
                     status: row.get(4)?,
-                    created_at: DateTime::from_timestamp(row.get(5)?, 0)
-                        .unwrap_or_else(|| Utc::now()),
+                    created_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(Utc::now),
                 });
             }
         }
@@ -288,7 +286,7 @@ impl Storage {
         )?;
 
         debug!("Cleaned up {} old attack events", count);
-        Ok(count as usize)
+        Ok(count)
     }
 }
 

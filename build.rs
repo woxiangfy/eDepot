@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
@@ -29,13 +29,13 @@ fn main() {
     println!("cargo:rustc-env=BPF_OBJECT={}", bpf_path.display());
 }
 
-fn build_stub(out_dir: &PathBuf) -> PathBuf {
+fn build_stub(out_dir: &Path) -> PathBuf {
     let stub_path = out_dir.join("edepot-ebpf.stub");
     std::fs::write(&stub_path, []).unwrap();
     stub_path
 }
 
-fn build_ebpf_linux(ebpf_dir: &PathBuf, out_dir: &PathBuf) -> PathBuf {
+fn build_ebpf_linux(ebpf_dir: &PathBuf, out_dir: &Path) -> PathBuf {
     let status = Command::new("cargo")
         .arg("build")
         .arg("--release")

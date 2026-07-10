@@ -240,17 +240,14 @@ impl RuleEngine {
             }
 
             let key = rule.get_key(&event.src_ip);
-            let rule_states = self
-                .states
-                .entry(rule.name.clone())
-                .or_insert_with(HashMap::new);
+            let rule_states = self.states.entry(rule.name.clone()).or_default();
             let state = rule_states
                 .entry(key.clone())
                 .or_insert_with(|| RuleState::new(rule.window_secs));
 
             if state.should_ban(rule.threshold, rule.block_duration) {
                 let ban_action = BanAction::new(
-                    event.src_ip.clone(),
+                    event.src_ip,
                     rule.name.clone(),
                     rule.block_duration,
                     format!("Rule {} triggered for {}", rule.name, event.src_ip),

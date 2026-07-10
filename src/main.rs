@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
-use tracing_subscriber;
 
 use edepot::collector::Collector;
 use edepot::config::Config;
@@ -43,7 +42,7 @@ async fn main() -> Result<()> {
     let rules: Vec<Rule> = config
         .rules
         .iter()
-        .map(|rule_config| Rule::from_config(rule_config))
+        .map(Rule::from_config)
         .collect::<std::result::Result<_, _>>()?;
     info!("Loaded {} rules", rules.len());
 
@@ -177,11 +176,8 @@ block_duration = 3600
             },
         };
 
-        let rules_result: std::result::Result<Vec<Rule>, edepot::rules::Error> = config
-            .rules
-            .iter()
-            .map(|rule_config| Rule::from_config(rule_config))
-            .collect();
+        let rules_result: std::result::Result<Vec<Rule>, edepot::rules::Error> =
+            config.rules.iter().map(Rule::from_config).collect();
 
         assert!(rules_result.is_ok());
         assert_eq!(rules_result.unwrap().len(), 1);
