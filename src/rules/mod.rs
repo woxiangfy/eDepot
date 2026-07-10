@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 
@@ -231,7 +231,10 @@ impl RuleEngine {
     }
 
     pub fn evaluate(&mut self, event: &NetworkEvent) -> Result<()> {
-        debug!("Evaluating event: {} -> port {} (proto {})", event.src_ip, event.dst_port, event.protocol);
+        debug!(
+            "Evaluating event: {} -> port {} (proto {})",
+            event.src_ip, event.dst_port, event.protocol
+        );
 
         for rule in &self.rules {
             if !rule.matches(event) {
@@ -336,7 +339,10 @@ impl RuleEngine {
             }
 
             let after_limit_cleanup: usize = self.states.values().map(|m| m.len()).sum();
-            debug!("After memory limit cleanup: {} entries", after_limit_cleanup);
+            debug!(
+                "After memory limit cleanup: {} entries",
+                after_limit_cleanup
+            );
         }
 
         debug!("Cleanup completed");

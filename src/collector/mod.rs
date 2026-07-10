@@ -1,4 +1,4 @@
-﻿use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -231,7 +231,10 @@ impl Collector {
     }
 
     pub async fn send_test_event(&self, event: NetworkEvent) -> Result<()> {
-        debug!("Sending test event: {} -> port {} (proto {})", event.src_ip, event.dst_port, event.protocol);
+        debug!(
+            "Sending test event: {} -> port {} (proto {})",
+            event.src_ip, event.dst_port, event.protocol
+        );
         self.tx.send(event).await.map_err(|e| {
             warn!("Failed to send event: {}", e);
             crate::error::Error::ChannelSendFailed

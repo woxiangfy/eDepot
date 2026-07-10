@@ -23,14 +23,15 @@ fn init_logging(log_level: &str) {
         "warn" => Level::WARN,
         "error" => Level::ERROR,
         _ => {
-            eprintln!("Warning: Invalid log level '{}', defaulting to 'info'", log_level);
+            eprintln!(
+                "Warning: Invalid log level '{}', defaulting to 'info'",
+                log_level
+            );
             Level::INFO
         }
     };
 
-    tracing_subscriber::fmt()
-        .with_max_level(level)
-        .init();
+    tracing_subscriber::fmt().with_max_level(level).init();
 
     info!("Logging initialized with level: {}", level);
 }
