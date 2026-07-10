@@ -9,6 +9,8 @@ jobs:
   build-linux:
     name: Build Linux Binary
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
