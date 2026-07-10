@@ -544,7 +544,7 @@ impl NftRawController {
                     result.push((*ip, *duration));
                 }
                 BanEntry::Cidr(cidr) => {
-                    result.push((cidr.network().into(), *duration));
+                    result.push((cidr.network(), *duration));
                 }
             }
         }
