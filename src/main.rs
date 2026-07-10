@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     print_environment_report();
 
     if !is_environment_supported() {
-        error!("Environment check failed - eDepot requires Linux with eBPF and nftables support");
+        error!("Environment check failed - eDepot requires Linux with nftables support");
         std::process::exit(1);
     }
     debug!("Environment check passed");

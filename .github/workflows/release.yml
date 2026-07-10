@@ -40,14 +40,8 @@ jobs:
             nftables \
             libsqlite3-dev
 
-      - name: Install eBPF toolchain
-        run: |
-          cargo install bpf-linker
-
-      - name: Build release binary with eBPF
-        run: cargo build --release --features ebpf
-        env:
-          RUSTUP_TOOLCHAIN: nightly
+      - name: Build release binary
+        run: cargo build --release
 
       - name: Verify binary exists
         run: test -f target/release/edepot
@@ -89,7 +83,7 @@ jobs:
             - Linux Kernel >= 5.4
             - nftables 已安装
             - root 权限运行
-            - eBPF 支持
+            - /proc/net 网络连接监控
 
             ### 验证下载
 

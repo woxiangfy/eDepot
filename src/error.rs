@@ -34,9 +34,6 @@ pub enum Error {
 
     #[error("channel send failed")]
     ChannelSendFailed,
-
-    #[error("eBPF feature is not enabled")]
-    EbpfFeatureDisabled,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

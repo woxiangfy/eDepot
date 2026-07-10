@@ -14,9 +14,6 @@ pub enum Error {
     #[error("nftables not available")]
     NftablesNotAvailable,
 
-    #[error("ebpf not supported")]
-    EbpfNotSupported,
-
     #[error("not running as root")]
     NotRoot,
 
@@ -34,7 +31,6 @@ pub struct EnvCheckResult {
     pub os_check: bool,
     pub kernel_check: bool,
     pub nftables_check: bool,
-    pub ebpf_check: bool,
     pub root_check: bool,
     pub sysctl_check: bool,
 }
@@ -43,7 +39,6 @@ pub fn check_environment() -> Result<EnvCheckResult> {
     let os_check = check_os()?;
     let kernel_check = check_kernel_version()?;
     let nftables_check = check_nftables()?;
-    let ebpf_check = check_ebpf()?;
     let root_check = check_root()?;
     let sysctl_check = check_sysctl()?;
 
@@ -51,7 +46,6 @@ pub fn check_environment() -> Result<EnvCheckResult> {
         os_check,
         kernel_check,
         nftables_check,
-        ebpf_check,
         root_check,
         sysctl_check,
     })
@@ -63,7 +57,6 @@ pub fn is_environment_supported() -> bool {
             result.os_check
                 && result.kernel_check
                 && result.nftables_check
-                && result.ebpf_check
                 && result.root_check
                 && result.sysctl_check
         }
@@ -90,10 +83,6 @@ pub fn print_environment_report() {
                 } else {
                     "FAIL"
                 }
-            );
-            println!(
-                "eBPF Support: {}",
-                if result.ebpf_check { "PASS" } else { "FAIL" }
             );
             println!(
                 "Root Privileges: {}",
@@ -155,13 +144,6 @@ fn check_nftables() -> Result<bool> {
     Err(Error::NftablesNotAvailable)
 }
 
-fn check_ebpf() -> Result<bool> {
-    match fs::metadata("/sys/fs/bpf") {
-        Ok(meta) if meta.is_dir() => Ok(true),
-        _ => Err(Error::EbpfNotSupported),
-    }
-}
-
 fn check_root() -> Result<bool> {
     match fs::read_to_string("/proc/self/status") {
         Ok(content) => {
@@ -217,21 +199,11 @@ mod tests {
     }
 
     #[test]
-    fn test_check_ebpf_path_exists() {
-        match check_ebpf() {
-            Ok(_) => {}
-            Err(Error::EbpfNotSupported) => {}
-            Err(e) => panic!("Unexpected error: {}", e),
-        }
-    }
-
-    #[test]
     fn test_env_check_result_struct() {
         let result = EnvCheckResult {
             os_check: true,
             kernel_check: true,
             nftables_check: true,
-            ebpf_check: true,
             root_check: true,
             sysctl_check: true,
         };
@@ -239,7 +211,6 @@ mod tests {
         assert!(result.os_check);
         assert!(result.kernel_check);
         assert!(result.nftables_check);
-        assert!(result.ebpf_check);
         assert!(result.root_check);
         assert!(result.sysctl_check);
     }
