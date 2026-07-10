@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 
 use ipnet::IpNet;
@@ -18,7 +18,7 @@ pub mod sliding_window;
 use sliding_window::SlidingWindow;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum RuleKey {
+pub(crate) enum RuleKey {
     Ip(IpAddr),
     Cidr(IpNet),
 }
@@ -135,7 +135,7 @@ impl Rule {
         true
     }
 
-    pub fn get_key(&self, ip: &IpAddr) -> RuleKey {
+    pub(crate) fn get_key(&self, ip: &IpAddr) -> RuleKey {
         match self.rule_type {
             RuleType::Ip => RuleKey::Ip(*ip),
             RuleType::Cidr => RuleKey::Cidr(self.get_cidr(ip)),
@@ -390,6 +390,7 @@ impl RuleEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv6Addr;
     use tokio::sync::mpsc;
 
     #[test]

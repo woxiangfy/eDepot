@@ -152,10 +152,6 @@ impl Collector {
         results
     }
 
-    fn parse_line(&self, line: &str, protocol: u8) -> Option<NetworkEvent> {
-        Self::parse_line_static(line, protocol)
-    }
-
     fn parse_line_static(line: &str, protocol: u8) -> Option<NetworkEvent> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 3 {
@@ -192,10 +188,6 @@ impl Collector {
         ))
     }
 
-    fn parse_address(&self, address: &str) -> Option<(IpAddr, u16)> {
-        Self::parse_address_static(address)
-    }
-
     fn parse_address_static(address: &str) -> Option<(IpAddr, u16)> {
         let parts: Vec<&str> = address.split(':').collect();
         if parts.len() != 2 {
@@ -225,10 +217,6 @@ impl Collector {
         }
     }
 
-    fn parse_ipv4(&self, hex: &str) -> Option<Ipv4Addr> {
-        Self::parse_ipv4_static(hex)
-    }
-
     fn parse_ipv4_static(hex: &str) -> Option<Ipv4Addr> {
         let bytes: Vec<u8> = (0..4)
             .map(|i| {
@@ -243,10 +231,6 @@ impl Collector {
         } else {
             None
         }
-    }
-
-    fn parse_ipv6(&self, hex: &str) -> Option<Ipv6Addr> {
-        Self::parse_ipv6_static(hex)
     }
 
     fn parse_ipv6_static(hex: &str) -> Option<Ipv6Addr> {
@@ -296,36 +280,21 @@ mod tests {
 
     #[test]
     fn test_parse_ipv4() {
-        let collector = Collector {
-            tx: mpsc::channel(100).0,
-            poll_interval_ms: 1000,
-            previous_connections: HashSet::new(),
-        };
-        let ip = collector.parse_ipv4("0101A8C0");
+        let ip = Collector::parse_ipv4_static("0101A8C0");
 
         assert_eq!(ip, Some(Ipv4Addr::new(192, 168, 1, 1)));
     }
 
     #[test]
     fn test_parse_ipv6() {
-        let collector = Collector {
-            tx: mpsc::channel(100).0,
-            poll_interval_ms: 1000,
-            previous_connections: HashSet::new(),
-        };
-        let ip = collector.parse_ipv6("00000000000000000000000000000100");
+        let ip = Collector::parse_ipv6_static("00000000000000000000000000000100");
 
         assert_eq!(ip, Some(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)));
     }
 
     #[test]
     fn test_parse_address_ipv4() {
-        let collector = Collector {
-            tx: mpsc::channel(100).0,
-            poll_interval_ms: 1000,
-            previous_connections: HashSet::new(),
-        };
-        let result = collector.parse_address("0101A8C0:0016");
+        let result = Collector::parse_address_static("0101A8C0:0016");
 
         assert_eq!(
             result,
@@ -335,12 +304,7 @@ mod tests {
 
     #[test]
     fn test_parse_address_ipv6() {
-        let collector = Collector {
-            tx: mpsc::channel(100).0,
-            poll_interval_ms: 1000,
-            previous_connections: HashSet::new(),
-        };
-        let result = collector.parse_address("00000000000000000000000000000100:0050");
+        let result = Collector::parse_address_static("00000000000000000000000000000100:0050");
 
         assert_eq!(
             result,
@@ -350,13 +314,8 @@ mod tests {
 
     #[test]
     fn test_parse_line() {
-        let collector = Collector {
-            tx: mpsc::channel(100).0,
-            poll_interval_ms: 1000,
-            previous_connections: HashSet::new(),
-        };
         let line = "  1: C0A80101:0016 0101017F:0050 01 00000000:00000000 00:00000000 00000000";
-        let event = collector.parse_line(line, 6);
+        let event = Collector::parse_line_static(line, 6);
 
         assert!(event.is_some());
         let event = event.unwrap();

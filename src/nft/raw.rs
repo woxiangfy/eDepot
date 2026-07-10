@@ -108,7 +108,7 @@ impl NftRawController {
                                         } else if let Ok(ip) = s.parse::<Ipv6Addr>() {
                                             result.push(IpAddr::V6(ip));
                                         } else if let Ok(cidr) = s.parse::<IpNet>() {
-                                            result.push(cidr.network().into());
+                                            result.push(cidr.network());
                                         } else {
                                             warn!("Failed to parse element: {}", s);
                                         }
@@ -405,7 +405,7 @@ impl NftRawController {
         let mut cidrs_to_remove: Vec<IpNet> = Vec::new();
 
         let banned = self.banned_entries.lock().unwrap();
-        for (entry, _) in banned.iter() {
+        for entry in banned.keys() {
             match entry {
                 BanEntry::Ip(ip) => {
                     if cidr.contains(ip) {
@@ -442,7 +442,7 @@ impl NftRawController {
     }
 
     fn is_ip_conflict_with_cidr_cached(&self, ip: IpAddr, banned: &HashMap<BanEntry, u32>) -> bool {
-        for (entry, _) in banned.iter() {
+        for entry in banned.keys() {
             if let BanEntry::Cidr(cidr) = entry {
                 if cidr.contains(&ip) {
                     return true;
