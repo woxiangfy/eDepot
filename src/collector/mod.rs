@@ -9,6 +9,15 @@ use crate::event::NetworkEvent;
 pub mod error;
 pub use error::Error;
 
+pub mod event_source;
+pub use event_source::{EventSource, EventSourceBuilder, EventSourceType};
+
+pub mod proc_net_source;
+#[cfg(feature = "ebpf")]
+pub mod ebpf_source;
+#[cfg(feature = "ebpf")]
+pub mod hybrid_source;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct NetworkEventRaw {
@@ -61,170 +70,44 @@ impl NetworkEventRaw {
 
 pub struct Collector {
     tx: mpsc::Sender<NetworkEvent>,
-    #[cfg(feature = "ebpf")]
-    bpf: Option<aya::Bpf>,
+    event_source: Option<Box<dyn EventSource>>,
 }
 
 impl Collector {
     pub async fn new(tx: mpsc::Sender<NetworkEvent>) -> Result<Self> {
-        #[cfg(feature = "ebpf")]
-        {
-            debug!("Loading eBPF bytes from BPF_OBJECT");
-            let bpf_bytes = include_bytes!(env!("BPF_OBJECT"));
-            debug!("eBPF bytes size: {} bytes", bpf_bytes.len());
-
-            let bpf = if bpf_bytes.is_empty() {
-                debug!("eBPF bytes are empty, running without eBPF");
-                None
-            } else {
-                debug!("Loading eBPF program from bytes");
-                let loaded_bpf = aya::Bpf::load(bpf_bytes)?;
-                debug!("eBPF program loaded successfully");
-                Some(loaded_bpf)
-            };
-
-            info!("Collector created with eBPF support");
-            Ok(Self { tx, bpf })
-        }
-
-        #[cfg(not(feature = "ebpf"))]
-        {
-            debug!("eBPF feature not enabled, creating collector without eBPF");
-            info!("Collector created (eBPF disabled)");
-            Ok(Self { tx })
-        }
+        debug!("Creating collector without event source");
+        info!("Collector created");
+        Ok(Self { tx, event_source: None })
     }
 
-    pub async fn load_tracepoint(&mut self) -> Result<()> {
-        #[cfg(feature = "ebpf")]
-        {
-            if let Some(bpf) = &mut self.bpf {
-                debug!("Loading tracepoint program: inet_sock_set_state");
-                let tracepoint = bpf
-                    .program_mut("inet_sock_set_state")
-                    .ok_or(Error::ProgramNotFound("inet_sock_set_state"))?;
-                debug!("Found tracepoint program, loading...");
-                tracepoint.load()?;
-                debug!("Tracepoint program loaded, attaching...");
-                tracepoint.attach()?;
-                info!("Loaded tracepoint: inet_sock_set_state");
-                debug!("Tracepoint attached successfully");
-            } else {
-                info!("eBPF not available, tracepoint skipped");
-                debug!("No eBPF object available for tracepoint");
-            }
-        }
+    pub async fn with_event_source(
+        tx: mpsc::Sender<NetworkEvent>,
+        source_type: EventSourceType,
+        interface: Option<&str>,
+        poll_interval_ms: u64,
+    ) -> Result<Self> {
+        debug!("Creating collector with event source: {}", source_type);
+        let event_source = EventSourceBuilder::new(source_type)
+            .interface(interface.unwrap_or(""))
+            .poll_interval_ms(poll_interval_ms)
+            .build()
+            .await?;
 
-        #[cfg(not(feature = "ebpf"))]
-        {
-            info!("eBPF feature disabled, tracepoint skipped");
-            debug!("eBPF feature not enabled, skipping tracepoint");
-        }
-
-        Ok(())
-    }
-
-    pub async fn load_xdp(&mut self, interface: &str) -> Result<()> {
-        #[cfg(feature = "ebpf")]
-        {
-            if let Some(bpf) = &mut self.bpf {
-                debug!("Loading XDP program on interface: {}", interface);
-                let xdp = bpf
-                    .program_mut("xdp_syn_filter")
-                    .ok_or(Error::ProgramNotFound("xdp_syn_filter"))?;
-                debug!("Found XDP program, loading...");
-                xdp.load()?;
-                debug!("XDP program loaded, attaching to interface...");
-                xdp.attach(interface, aya::programs::XdpFlags::default())?;
-                info!("Attached XDP program to interface: {}", interface);
-                debug!("XDP program attached successfully to {}", interface);
-            } else {
-                info!("eBPF not available, XDP skipped");
-                debug!("No eBPF object available for XDP on {}", interface);
-            }
-        }
-
-        #[cfg(not(feature = "ebpf"))]
-        {
-            info!("eBPF feature disabled, XDP skipped for {}", interface);
-            debug!("eBPF feature not enabled, skipping XDP on {}", interface);
-        }
-
-        Ok(())
+        info!("Collector created with event source: {}", event_source.name());
+        Ok(Self {
+            tx,
+            event_source: Some(event_source),
+        })
     }
 
     pub async fn start_event_loop(&self) -> Result<()> {
-        #[cfg(feature = "ebpf")]
-        {
-            use aya::maps::perf::AsyncPerfEventArray;
-            use std::mem;
-
-            if let Some(bpf) = &self.bpf {
-                debug!("Setting up event loop with eBPF");
-                let events_map = bpf.map("EVENTS").ok_or(Error::MapNotFound("EVENTS"))?;
-                debug!("Found EVENTS map, creating AsyncPerfEventArray");
-
-                let mut events = AsyncPerfEventArray::try_from(events_map)?;
-                debug!("AsyncPerfEventArray created");
-
-                let tx = self.tx.clone();
-                let cpu_count = aya::util::online_cpus().unwrap().len();
-                debug!("Spawning event readers for {} CPUs", cpu_count);
-
-                for cpu in 0..cpu_count {
-                    let mut buf = events.open(cpu, None, None)?;
-                    let tx = tx.clone();
-
-                    tokio::task::spawn(async move {
-                        debug!("Event reader for CPU {} started", cpu);
-                        let mut buffers = vec![0u8; 4096];
-
-                        loop {
-                            let events = buf.read_events(&mut buffers).await;
-                            match events {
-                                Ok(read) => {
-                                    debug!("CPU {}: read {} events", cpu, read.read);
-                                    for i in 0..read.read {
-                                        let offset = i * mem::size_of::<NetworkEventRaw>();
-                                        if offset + mem::size_of::<NetworkEventRaw>() <= read.read {
-                                            let raw: &NetworkEventRaw = unsafe {
-                                                &*(buffers.as_ptr().add(offset)
-                                                    as *const NetworkEventRaw)
-                                            };
-                                            let event = raw.to_network_event();
-                                            debug!(
-                                                "CPU {}: event from {} port {} protocol {}",
-                                                cpu, event.src_ip, event.dst_port, event.protocol
-                                            );
-                                            if tx.send(event).await.is_err() {
-                                                debug!("Event channel closed, exiting event loop for CPU {}", cpu);
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!("Perf event read error on CPU {}: {}", cpu, e);
-                                    break;
-                                }
-                            }
-                        }
-                        debug!("Event reader for CPU {} exited", cpu);
-                    });
-                }
-
-                info!("Event loop started");
-                debug!("Event loop fully initialized");
-            } else {
-                info!("eBPF not available, event loop running in stub mode");
-                debug!("No eBPF object, event loop in stub mode");
-            }
-        }
-
-        #[cfg(not(feature = "ebpf"))]
-        {
-            info!("eBPF feature disabled, event loop running in stub mode");
-            debug!("eBPF feature not enabled, event loop in stub mode");
+        if let Some(event_source) = &self.event_source {
+            debug!("Starting event loop with source: {}", event_source.name());
+            event_source.start(self.tx.clone()).await?;
+            info!("Event loop started with source: {}", event_source.name());
+        } else {
+            info!("No event source configured, running in stub mode");
+            debug!("Collector has no event source, event loop in stub mode");
         }
 
         Ok(())
@@ -247,6 +130,7 @@ impl Collector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
     use tokio::sync::mpsc;
 
     #[test]
@@ -333,23 +217,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_collector_load_tracepoint() {
+    async fn test_collector_with_event_source_procnet() {
         let (tx, _rx) = mpsc::channel(100);
-        let mut collector = Collector::new(tx).await.unwrap();
+        let collector = Collector::with_event_source(
+            tx,
+            EventSourceType::ProcNet,
+            None,
+            1000,
+        )
+        .await;
 
-        let result = collector.load_tracepoint().await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_collector_load_xdp() {
-        let (tx, _rx) = mpsc::channel(100);
-        let mut collector = Collector::new(tx).await.unwrap();
-
-        let result = collector.load_xdp("eth0").await;
-
-        assert!(result.is_ok());
+        assert!(collector.is_ok());
     }
 
     #[tokio::test]
@@ -376,12 +254,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_collector_start_event_loop() {
+    async fn test_collector_start_event_loop_no_source() {
         let (tx, _rx) = mpsc::channel(100);
         let collector = Collector::new(tx).await.unwrap();
 
         let result = collector.start_event_loop().await;
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_event_source_type_from_str() {
+        assert_eq!(
+            EventSourceType::from_str("ebpf"),
+            Ok(EventSourceType::Ebpf)
+        );
+        assert_eq!(
+            EventSourceType::from_str("procnet"),
+            Ok(EventSourceType::ProcNet)
+        );
+        assert_eq!(
+            EventSourceType::from_str("hybrid"),
+            Ok(EventSourceType::Hybrid)
+        );
+        assert!(EventSourceType::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn test_event_source_type_display() {
+        assert_eq!(format!("{}", EventSourceType::Ebpf), "ebpf");
+        assert_eq!(format!("{}", EventSourceType::ProcNet), "procnet");
+        assert_eq!(format!("{}", EventSourceType::Hybrid), "hybrid");
     }
 }

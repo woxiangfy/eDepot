@@ -2,6 +2,9 @@
 worker_count = 4
 nft_table = "edepot"
 log_level = "info"
+event_source = "procnet" # ebpf / procnet / hybrid
+interface = "eth0" # eBPF 监听接口
+poll_interval_ms = 1000  # /proc/net 轮询间隔（毫秒）
 
 [whitelist]
 cidr = [

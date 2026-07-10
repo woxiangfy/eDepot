@@ -20,6 +20,7 @@ futures = "0.3"
 hex = "0.4"
 bytes = "1"
 aya = { version = "0.13", default-features = false, features = ["async_tokio"], optional = true }
+async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,10 +1,11 @@
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn, Level};
 
-use edepot::collector::Collector;
+use edepot::collector::{Collector, EventSourceType};
 use edepot::config::Config;
 use edepot::dispatcher::Dispatcher;
 use edepot::env_check::{is_environment_supported, print_environment_report};
@@ -149,12 +150,29 @@ async fn main() -> Result<()> {
     });
 
     debug!("Initializing collector");
-    let mut collector = Collector::new(event_tx).await?;
-    debug!("Collector initialized");
+    let event_source_type = EventSourceType::from_str(&config.global.event_source)
+        .unwrap_or_else(|e| {
+            warn!("Invalid event source '{}': {}, using default 'procnet'", config.global.event_source, e);
+            EventSourceType::ProcNet
+        });
 
-    debug!("Loading tracepoint");
-    collector.load_tracepoint().await?;
-    debug!("Tracepoint loaded");
+    debug!(
+        "Event source: {}, interface: {}, poll_interval: {}ms",
+        event_source_type, config.global.interface, config.global.poll_interval_ms
+    );
+
+    let collector = Collector::with_event_source(
+        event_tx,
+        event_source_type,
+        Some(&config.global.interface),
+        config.global.poll_interval_ms,
+    )
+    .await?;
+    debug!("Collector initialized with event source: {}", event_source_type);
+
+    debug!("Starting event loop");
+    collector.start_event_loop().await?;
+    debug!("Event loop started");
 
     info!("eDepot is now running in defense mode");
     debug!("All components started successfully");
@@ -227,6 +245,9 @@ block_duration = 3600
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
                 log_level: "info".to_string(),
+                event_source: "procnet".to_string(),
+                interface: "eth0".to_string(),
+                poll_interval_ms: 1000,
             },
             whitelist: edepot::config::WhitelistConfig { cidr: Vec::new() },
             rules: vec![edepot::config::RuleConfig {
