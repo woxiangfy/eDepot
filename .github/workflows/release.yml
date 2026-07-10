@@ -39,8 +39,13 @@ jobs:
             nftables \
             libsqlite3-dev
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Install eBPF toolchain
+        run: |
+          cargo install bpf-linker
+          rustup target add bpfel-unknown-none
+
+      - name: Build release binary with eBPF
+        run: cargo build --release --features ebpf
 
       - name: Verify binary exists
         run: test -f target/release/edepot
