@@ -26,24 +26,20 @@ enum RuleKey {
 impl Hash for RuleKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            RuleKey::Ip(ip) => {
-                match ip {
-                    IpAddr::V4(ip) => ip.octets().hash(state),
-                    IpAddr::V6(ip) => ip.octets().hash(state),
+            RuleKey::Ip(ip) => match ip {
+                IpAddr::V4(ip) => ip.octets().hash(state),
+                IpAddr::V6(ip) => ip.octets().hash(state),
+            },
+            RuleKey::Cidr(cidr) => match cidr {
+                IpNet::V4(cidr) => {
+                    cidr.network().octets().hash(state);
+                    state.write_u8(cidr.prefix_len());
                 }
-            }
-            RuleKey::Cidr(cidr) => {
-                match cidr {
-                    IpNet::V4(cidr) => {
-                        cidr.network().octets().hash(state);
-                        state.write_u8(cidr.prefix_len());
-                    }
-                    IpNet::V6(cidr) => {
-                        cidr.network().octets().hash(state);
-                        state.write_u8(cidr.prefix_len());
-                    }
+                IpNet::V6(cidr) => {
+                    cidr.network().octets().hash(state);
+                    state.write_u8(cidr.prefix_len());
                 }
-            }
+            },
         }
     }
 }
@@ -313,9 +309,7 @@ impl RuleEngine {
 
                 info!(
                     "Ban triggered: {} (rule: {}, target: {})",
-                    event.src_ip,
-                    rule.name,
-                    target
+                    event.src_ip, rule.name, target
                 );
             } else {
                 debug!(

@@ -80,13 +80,12 @@ impl Collector {
                 crate::error::Error::ChannelSendFailed
             })?;
 
-        let udp6_results =
-            spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp6", 17))
-                .await
-                .map_err(|e| {
-                    error!("Failed to process /proc/net/udp6: {}", e);
-                    crate::error::Error::ChannelSendFailed
-                })?;
+        let udp6_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp6", 17))
+            .await
+            .map_err(|e| {
+                error!("Failed to process /proc/net/udp6: {}", e);
+                crate::error::Error::ChannelSendFailed
+            })?;
 
         let mut new_connections = HashSet::new();
 

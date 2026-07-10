@@ -28,15 +28,18 @@ impl NftController {
     ///
     /// * `config` - 配置（包含 nft_table 名称）
     pub async fn new(config: Arc<Config>) -> Result<Self> {
-        let nft = NftRawController::new(&config.global.nft_table).map_err(crate::nft::error::Error::from)?;
+        let nft = NftRawController::new(&config.global.nft_table)
+            .map_err(crate::nft::error::Error::from)?;
 
         info!("Initializing nftables table: {}", config.global.nft_table);
         nft.create_table().map_err(crate::nft::error::Error::from)?;
         nft.create_sets().map_err(crate::nft::error::Error::from)?;
-        nft.create_chains().map_err(crate::nft::error::Error::from)?;
+        nft.create_chains()
+            .map_err(crate::nft::error::Error::from)?;
 
         info!("Syncing existing banned IPs from nftables");
-        nft.sync_from_nftables().map_err(crate::nft::error::Error::from)?;
+        nft.sync_from_nftables()
+            .map_err(crate::nft::error::Error::from)?;
 
         info!("nftables controller initialized");
         Ok(Self { config, nft })
@@ -112,7 +115,9 @@ impl NftController {
                 );
                 Ok(())
             }
-            Err(e) => Err(crate::error::Error::Nftables(crate::nft::error::Error::from(e))),
+            Err(e) => Err(crate::error::Error::Nftables(
+                crate::nft::error::Error::from(e),
+            )),
         }
     }
 
@@ -147,11 +152,15 @@ impl NftController {
                 }
                 Err(e) => {
                     error!("Failed to ban CIDR {}: {}", cidr, e);
-                    Err(crate::error::Error::Nftables(crate::nft::error::Error::from(e)))
+                    Err(crate::error::Error::Nftables(
+                        crate::nft::error::Error::from(e),
+                    ))
                 }
             }
         } else {
-            Err(crate::error::Error::Nftables(crate::nft::error::Error::from(raw::Error::InvalidIp)))
+            Err(crate::error::Error::Nftables(
+                crate::nft::error::Error::from(raw::Error::InvalidIp),
+            ))
         }
     }
 
@@ -191,7 +200,10 @@ impl NftController {
     ///
     /// 返回包含 IP 地址和剩余封禁时长的元组列表
     pub fn get_banned_ips(&self) -> Result<Vec<(IpAddr, u32)>> {
-        Ok(self.nft.get_banned_ips().map_err(crate::nft::error::Error::from)?)
+        Ok(self
+            .nft
+            .get_banned_ips()
+            .map_err(crate::nft::error::Error::from)?)
     }
 
     /// 获取配置中的 nft_table 名称

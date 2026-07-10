@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use ipnet::IpNet;
 use nftables::helper::{apply_ruleset, get_current_ruleset, NftablesError};
-use nftables::schema::{Chain, Element, NfCmd, NfListObject, Nftables, Set, SetFlag, SetType, SetTypeValue, Table};
+use nftables::schema::{
+    Chain, Element, NfCmd, NfListObject, Nftables, Set, SetFlag, SetType, SetTypeValue, Table,
+};
 use nftables::types::{NfChainPolicy, NfFamily, NfHook};
 use thiserror::Error;
 use tracing::{debug, error, warn};
@@ -95,7 +97,8 @@ impl NftRawController {
                 for obj in nftables.objects.into_owned() {
                     if let NfObject::ListObject(NfListObject::Set(set)) = obj {
                         if set.table.as_ref() == self.table
-                            && (set.name.as_ref() == self.ipv4_set || set.name.as_ref() == self.ipv6_set)
+                            && (set.name.as_ref() == self.ipv4_set
+                                || set.name.as_ref() == self.ipv6_set)
                         {
                             if let Some(elems) = set.elem {
                                 for elem in elems.into_owned() {
@@ -170,7 +173,10 @@ impl NftRawController {
         };
 
         let nftables = Nftables {
-            objects: vec![NfObject::CmdObject(NfCmd::Add(NfListObject::Set(Box::new(set))))].into(),
+            objects: vec![NfObject::CmdObject(NfCmd::Add(NfListObject::Set(
+                Box::new(set),
+            )))]
+            .into(),
         };
 
         match apply_ruleset(&nftables) {
@@ -181,7 +187,10 @@ impl NftRawController {
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("file exists") {
-                    debug!("IPv4 set {} already exists, skipping creation", self.ipv4_set);
+                    debug!(
+                        "IPv4 set {} already exists, skipping creation",
+                        self.ipv4_set
+                    );
                     Ok(())
                 } else {
                     Err(Error::SetCreationFailed)
@@ -201,7 +210,10 @@ impl NftRawController {
         };
 
         let nftables = Nftables {
-            objects: vec![NfObject::CmdObject(NfCmd::Add(NfListObject::Set(Box::new(set))))].into(),
+            objects: vec![NfObject::CmdObject(NfCmd::Add(NfListObject::Set(
+                Box::new(set),
+            )))]
+            .into(),
         };
 
         match apply_ruleset(&nftables) {
@@ -212,7 +224,10 @@ impl NftRawController {
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("file exists") {
-                    debug!("IPv6 set {} already exists, skipping creation", self.ipv6_set);
+                    debug!(
+                        "IPv6 set {} already exists, skipping creation",
+                        self.ipv6_set
+                    );
                     Ok(())
                 } else {
                     Err(Error::SetCreationFailed)
@@ -300,10 +315,7 @@ impl NftRawController {
         {
             let banned = self.banned_entries.lock().unwrap();
             if self.is_ip_conflict_with_cidr_cached(ip, &banned) {
-                warn!(
-                    "IP {} conflicts with existing CIDR, skipping ban",
-                    ip
-                );
+                warn!("IP {} conflicts with existing CIDR, skipping ban", ip);
                 return Err(Error::IpCidrConflict);
             }
 
@@ -327,8 +339,14 @@ impl NftRawController {
 
         match apply_ruleset(&nftables) {
             Ok(_) => {
-                self.banned_entries.lock().unwrap().insert(BanEntry::Ip(ip), duration);
-                debug!("Added IP {} to set {} with {}s duration", ip, set_name, duration);
+                self.banned_entries
+                    .lock()
+                    .unwrap()
+                    .insert(BanEntry::Ip(ip), duration);
+                debug!(
+                    "Added IP {} to set {} with {}s duration",
+                    ip, set_name, duration
+                );
                 Ok(())
             }
             Err(e) => {
@@ -365,7 +383,10 @@ impl NftRawController {
             Ok(_) => {
                 let mut banned = self.banned_entries.lock().unwrap();
                 banned.insert(BanEntry::Cidr(cidr), duration);
-                debug!("Added CIDR {} to set {} with {}s duration", cidr, set_name, duration);
+                debug!(
+                    "Added CIDR {} to set {} with {}s duration",
+                    cidr, set_name, duration
+                );
                 Ok(())
             }
             Err(e) => {
@@ -410,7 +431,10 @@ impl NftRawController {
 
         for cidr_to_remove in cidrs_to_remove {
             if let Err(e) = self.remove_cidr_from_set(cidr_to_remove) {
-                warn!("Failed to remove CIDR {} before adding CIDR: {}", cidr_to_remove, e);
+                warn!(
+                    "Failed to remove CIDR {} before adding CIDR: {}",
+                    cidr_to_remove, e
+                );
             }
         }
 
@@ -442,12 +466,18 @@ impl NftRawController {
         };
 
         let nftables = Nftables {
-            objects: vec![NfObject::CmdObject(NfCmd::Delete(NfListObject::Element(elem)))].into(),
+            objects: vec![NfObject::CmdObject(NfCmd::Delete(NfListObject::Element(
+                elem,
+            )))]
+            .into(),
         };
 
         match apply_ruleset(&nftables) {
             Ok(_) => {
-                self.banned_entries.lock().unwrap().remove(&BanEntry::Ip(ip));
+                self.banned_entries
+                    .lock()
+                    .unwrap()
+                    .remove(&BanEntry::Ip(ip));
                 debug!("Removed IP {} from set {}", ip, set_name);
                 Ok(())
             }
@@ -477,12 +507,18 @@ impl NftRawController {
         };
 
         let nftables = Nftables {
-            objects: vec![NfObject::CmdObject(NfCmd::Delete(NfListObject::Element(elem)))].into(),
+            objects: vec![NfObject::CmdObject(NfCmd::Delete(NfListObject::Element(
+                elem,
+            )))]
+            .into(),
         };
 
         match apply_ruleset(&nftables) {
             Ok(_) => {
-                self.banned_entries.lock().unwrap().remove(&BanEntry::Cidr(cidr));
+                self.banned_entries
+                    .lock()
+                    .unwrap()
+                    .remove(&BanEntry::Cidr(cidr));
                 debug!("Removed CIDR {} from set {}", cidr, set_name);
                 Ok(())
             }
