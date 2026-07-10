@@ -548,7 +548,10 @@ mod tests {
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
         let key = rule.get_key(&ip);
 
-        assert_eq!(key, RuleKey::Ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))));
+        assert_eq!(
+            key,
+            RuleKey::Ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)))
+        );
     }
 
     #[test]
