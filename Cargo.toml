@@ -17,6 +17,7 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 crossbeam-channel = "0.5"
 futures = "0.3"
+nftables = "0.6"
 
 [dev-dependencies]
 tempfile = "3"

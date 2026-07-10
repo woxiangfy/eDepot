@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 
+use ipnet::IpNet;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
@@ -263,12 +264,27 @@ impl RuleEngine {
                     rule.name, event.src_ip
                 );
 
-                let ban_action = BanAction::new(
-                    event.src_ip,
-                    rule.name.clone(),
-                    rule.block_duration,
-                    format!("Rule {} triggered for {}", rule.name, event.src_ip),
-                );
+                let ban_action = match rule.rule_type {
+                    RuleType::Ip => BanAction::new(
+                        event.src_ip,
+                        rule.name.clone(),
+                        rule.block_duration,
+                        format!("Rule {} triggered for {}", rule.name, event.src_ip),
+                    ),
+                    RuleType::Cidr => {
+                        let cidr_str = rule.get_key(&event.src_ip);
+                        let cidr: IpNet = cidr_str.parse().unwrap();
+                        BanAction::new_cidr(
+                            event.src_ip,
+                            rule.name.clone(),
+                            rule.block_duration,
+                            format!("Rule {} triggered for CIDR {}", rule.name, cidr),
+                            cidr,
+                        )
+                    }
+                };
+
+                let target = ban_action.get_target();
 
                 if let Err(e) = self.tx.try_send(ban_action.clone()) {
                     debug!("Failed to send ban action to nft: {}", e);
@@ -282,7 +298,12 @@ impl RuleEngine {
                     debug!("Ban action sent to storage");
                 }
 
-                info!("Ban triggered: {} by rule {}", event.src_ip, rule.name);
+                info!(
+                    "Ban triggered: {} (rule: {}, target: {})",
+                    event.src_ip,
+                    rule.name,
+                    target
+                );
             } else {
                 debug!(
                     "Rule {}: count={} < threshold={}, no ban",

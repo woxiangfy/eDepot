@@ -1,22 +1,21 @@
 # eDepot - 主机自动化防御系统
 
-eDepot 是一个基于 eBPF 和 nftables 的主机自动化防御系统，能够实时监控网络流量，检测攻击行为，并自动封禁恶意 IP。
+eDepot 是一个基于 `/proc/net` 和 nftables 的主机自动化防御系统，能够实时监控网络流量，检测攻击行为，并自动封禁恶意 IP。
 
 ## 功能特性
 
-- **eBPF 数据采集**：基于 tracepoint 和 XDP 在内核层采集网络事件，性能开销低
+- **`/proc/net` 轮询采集**：通过读取 `/proc/net/tcp`、`/proc/net/tcp6`、`/proc/net/udp`、`/proc/net/udp6` 文件获取网络连接信息，兼容性强，无需特殊内核配置
 - **多维度规则检测**：支持基于 IP/CIDR 的滑动窗口检测，覆盖 SSH 暴力破解、CC 攻击、端口扫描等场景
-- **nftables 内核级封禁**：通过 nftables 动态集合实现高效封禁，性能远超 iptables
+- **nftables 内核级封禁**：通过 nftables 动态集合实现高效封禁
 - **多 Worker 并行处理**：事件按源 IP 哈希分发到多个 Worker，充分利用多核 CPU
 - **SQLite 审计存储**：所有攻击事件和封禁记录持久化存储，支持查询和回溯
 - **环境自动检测**：启动时自动检测系统环境，确保满足运行要求
 
 ## 系统要求
 
-- Linux Kernel >= 5.4
+- Linux 操作系统
 - nftables 已安装
 - root 权限运行
-- eBPF 支持（CONFIG_BPF=y）
 
 ## 快速开始
 
@@ -46,8 +45,10 @@ sudo ./target/release/edepot
 
 ```toml
 [global]
-worker_count = 4          # Worker 线程数
-nft_table = "edepot"      # nftables 表名
+worker_count = 4            # Worker 线程数
+nft_table = "edepot"        # nftables 表名
+log_level = "info"          # 日志级别: debug/info/warn/error
+poll_interval_ms = 1000     # /proc/net 轮询间隔（毫秒）
 ```
 
 ### 白名单
@@ -55,8 +56,8 @@ nft_table = "edepot"      # nftables 表名
 ```toml
 [whitelist]
 cidr = [
-    "127.0.0.0/8",        # IPv4 白名单
-    "::1/128"             # IPv6 白名单
+    "127.0.0.0/8",          # IPv4 白名单
+    "::1/128"               # IPv6 白名单
 ]
 ```
 
@@ -64,21 +65,21 @@ cidr = [
 
 ```toml
 [memory]
-max_entries = 100000      # 最大状态条目数
-cleanup_interval = 60     # 清理间隔（秒）
+max_entries = 100000        # 最大状态条目数
+cleanup_interval = 60       # 清理间隔（秒）
 ```
 
 ### 检测规则
 
 ```toml
 [[rules]]
-name = "ssh_bruteforce"   # 规则名称
-protocol = "tcp"          # 协议: tcp/udp/icmp
-ports = [22]              # 目标端口（可选，不填则匹配所有端口）
-rule_type = "ip"          # 规则类型: ip/cidr
-window_secs = 20          # 检测窗口（秒）
-threshold = 8             # 阈值（窗口内连接数超过则封禁）
-block_duration = 3600     # 封禁时长（秒）
+name = "ssh_bruteforce"     # 规则名称
+protocol = "tcp"            # 协议: tcp/udp/icmp
+ports = [22]                # 目标端口（可选，不填则匹配所有端口）
+rule_type = "ip"            # 规则类型: ip/cidr
+window_secs = 20            # 检测窗口（秒）
+threshold = 8               # 阈值（窗口内连接数超过则封禁）
+block_duration = 3600       # 封禁时长（秒）
 ```
 
 ## 项目架构
@@ -86,30 +87,29 @@ block_duration = 3600     # 封禁时长（秒）
 ```
 edepot/
 ├── src/
-│   ├── main.rs           # 程序入口
-│   ├── lib.rs            # 库文件
-│   ├── error.rs          # 全局错误类型
-│   ├── event.rs          # 事件定义
-│   ├── config/           # 配置管理
-│   ├── env_check/        # 环境检测
-│   ├── collector/        # eBPF 数据采集
-│   ├── dispatcher/       # 事件分发器
-│   ├── worker/           # Worker 处理
-│   ├── rules/            # 规则引擎
-│   ├── nft/              # nftables 控制
-│   └── storage/          # SQLite 存储
-├── nftables/             # nftables 底层库
-├── ebpf/                 # eBPF 程序
-├── config.toml           # 默认配置文件
-└── Cargo.toml            # 项目配置
+│   ├── main.rs               # 程序入口
+│   ├── lib.rs                # 库文件
+│   ├── error.rs              # 全局错误类型
+│   ├── event.rs              # 事件定义
+│   ├── config/               # 配置管理
+│   ├── env_check/            # 环境检测
+│   ├── collector/            # /proc/net 数据采集
+│   ├── dispatcher/           # 事件分发器
+│   ├── worker/               # Worker 处理
+│   ├── rules/                # 规则引擎
+│   ├── nft/                  # nftables 控制
+│   └── storage/              # SQLite 存储
+├── config.toml               # 默认配置文件
+├── Cargo.toml                # 项目配置
+└── build.rs                  # 构建脚本
 ```
 
 ## 数据流
 
 ```
-eBPF Collector → Dispatcher → Worker (Rule Engine) → nftables (封禁)
-                                                          ↓
-                                                    Storage (审计)
+/proc/net Collector → Dispatcher → Worker (Rule Engine) → nftables (封禁)
+                                                              ↓
+                                                        Storage (审计)
 ```
 
 ## 测试

@@ -1,4 +1,5 @@
-﻿use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use ipnet::IpNet;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NetworkEvent {
@@ -72,10 +73,11 @@ pub struct BanAction {
     pub rule_name: String,
     pub duration: u32,
     pub reason: String,
+    pub cidr: Option<IpNet>,
 }
 
 impl BanAction {
-    /// 创建新的封禁动作
+    /// 创建新的 IP 封禁动作
     ///
     /// # 参数
     ///
@@ -89,6 +91,46 @@ impl BanAction {
             rule_name,
             duration,
             reason,
+            cidr: None,
+        }
+    }
+
+    /// 创建新的 CIDR 封禁动作
+    ///
+    /// # 参数
+    ///
+    /// * `src_ip` - 触发封禁的源 IP 地址
+    /// * `rule_name` - 触发的规则名称
+    /// * `duration` - 封禁时长（秒）
+    /// * `reason` - 封禁原因
+    /// * `cidr` - 要封禁的 CIDR 网络
+    pub fn new_cidr(
+        src_ip: IpAddr,
+        rule_name: String,
+        duration: u32,
+        reason: String,
+        cidr: IpNet,
+    ) -> Self {
+        Self {
+            src_ip,
+            rule_name,
+            duration,
+            reason,
+            cidr: Some(cidr),
+        }
+    }
+
+    /// 判断是否为 CIDR 封禁
+    pub fn is_cidr_ban(&self) -> bool {
+        self.cidr.is_some()
+    }
+
+    /// 获取封禁目标（IP 或 CIDR）
+    pub fn get_target(&self) -> String {
+        if let Some(cidr) = &self.cidr {
+            cidr.to_string()
+        } else {
+            self.src_ip.to_string()
         }
     }
 }
@@ -214,6 +256,29 @@ mod tests {
         assert_eq!(ban.rule_name, "ssh_bruteforce");
         assert_eq!(ban.duration, 3600);
         assert_eq!(ban.reason, "exceeded threshold");
+        assert_eq!(ban.cidr, None);
+        assert!(!ban.is_cidr_ban());
+        assert_eq!(ban.get_target(), "192.168.1.100");
+    }
+
+    #[test]
+    fn test_ban_action_new_cidr() {
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        let cidr: IpNet = "192.168.1.0/24".parse().unwrap();
+        let ban = BanAction::new_cidr(
+            ip,
+            "tcp_scan".to_string(),
+            7200,
+            "CIDR threshold exceeded".to_string(),
+            cidr,
+        );
+
+        assert_eq!(ban.src_ip, ip);
+        assert_eq!(ban.rule_name, "tcp_scan");
+        assert_eq!(ban.duration, 7200);
+        assert_eq!(ban.reason, "CIDR threshold exceeded");
+        assert!(ban.is_cidr_ban());
+        assert_eq!(ban.get_target(), "192.168.1.0/24");
     }
 
     #[test]

@@ -106,7 +106,7 @@ impl Collector {
 
             if let Some(event) = self.parse_line(&line, protocol) {
                 let key = ConnectionKey {
-                    src_ip: event.src_ip.clone(),
+                    src_ip: event.src_ip,
                     dst_port: event.dst_port,
                     protocol: event.protocol,
                 };
