@@ -1,4 +1,4 @@
-use std::path::Path;
+﻿use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
@@ -48,19 +48,23 @@ impl Storage {
     ///
     /// 返回 Storage 实例，或错误信息
     pub fn new(path: &Path) -> Result<Self> {
+        debug!("Opening database at: {}", path.display());
         let conn = Connection::open(path)?;
+        debug!("Database connection opened");
+
+        debug!("Initializing database tables");
         Self::init_tables(&conn)?;
+        debug!("Database tables initialized");
 
         info!("Storage initialized at: {}", path.display());
+        debug!("Storage instance created");
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
 
-    /// 初始化数据库表结构
-    ///
-    /// 创建 attack_events 和 ban_records 表以及相应的索引
     fn init_tables(conn: &Connection) -> Result<()> {
+        debug!("Creating attack_events table");
         conn.execute(
             "CREATE TABLE IF NOT EXISTS attack_events (
                 id INTEGER PRIMARY KEY,
@@ -73,7 +77,9 @@ impl Storage {
             )",
             [],
         )?;
+        debug!("attack_events table created");
 
+        debug!("Creating ban_records table");
         conn.execute(
             "CREATE TABLE IF NOT EXISTS ban_records (
                 id INTEGER PRIMARY KEY,
@@ -85,33 +91,25 @@ impl Storage {
             )",
             [],
         )?;
+        debug!("ban_records table created");
 
+        debug!("Creating attack_events index");
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_attack_events_source_ip ON attack_events(source_ip)",
             [],
         )?;
+        debug!("attack_events index created");
 
+        debug!("Creating ban_records index");
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ban_records_ip ON ban_records(ip)",
             [],
         )?;
+        debug!("ban_records index created");
 
         Ok(())
     }
 
-    /// 插入攻击事件
-    ///
-    /// # 参数
-    ///
-    /// * `source_ip` - 源 IP 地址
-    /// * `protocol` - 协议类型
-    /// * `port` - 目标端口
-    /// * `rule` - 触发的规则名称
-    /// * `count` - 事件计数
-    ///
-    /// # 返回值
-    ///
-    /// 返回插入记录的 ID
     pub fn insert_attack_event(
         &self,
         source_ip: &str,
@@ -120,6 +118,11 @@ impl Storage {
         rule: &str,
         count: u32,
     ) -> Result<i64> {
+        debug!(
+            "Inserting attack event: ip={}, protocol={}, port={}, rule={}, count={}",
+            source_ip, protocol, port, rule, count
+        );
+
         let now = Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
@@ -129,19 +132,17 @@ impl Storage {
             params![source_ip, protocol, port, rule, count, now],
         )?;
 
-        Ok(conn.last_insert_rowid())
+        let id = conn.last_insert_rowid();
+        debug!("Attack event inserted with ID: {}", id);
+        Ok(id)
     }
 
-    /// 插入封禁记录
-    ///
-    /// # 参数
-    ///
-    /// * `ban` - 封禁动作
-    ///
-    /// # 返回值
-    ///
-    /// 返回插入记录的 ID
     pub fn insert_ban_record(&self, ban: &BanAction) -> Result<i64> {
+        debug!(
+            "Inserting ban record: ip={}, rule={}, duration={}, reason={}",
+            ban.src_ip, ban.rule_name, ban.duration, ban.reason
+        );
+
         let now = Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
@@ -157,41 +158,31 @@ impl Storage {
             ],
         )?;
 
+        let id = conn.last_insert_rowid();
         info!(
             "Ban record inserted: ip={}, rule={}, duration={}",
             ban.src_ip, ban.rule_name, ban.duration
         );
-        Ok(conn.last_insert_rowid())
+        debug!("Ban record inserted with ID: {}", id);
+        Ok(id)
     }
 
-    /// 更新封禁状态
-    ///
-    /// 将指定 IP 的活跃封禁记录更新为新状态
-    ///
-    /// # 参数
-    ///
-    /// * `ip` - IP 地址
-    /// * `status` - 新状态（如 "expired", "removed"）
     pub fn update_ban_status(&self, ip: &str, status: &str) -> Result<()> {
+        debug!("Updating ban status: ip={}, status={}", ip, status);
+
         let conn = self.conn.lock().unwrap();
-        conn.execute(
+        let changes = conn.execute(
             "UPDATE ban_records SET status = ? WHERE ip = ? AND status = 'active'",
             params![status, ip],
         )?;
 
+        debug!("Ban status updated: {} rows affected", changes);
         Ok(())
     }
 
-    /// 获取攻击事件列表
-    ///
-    /// # 参数
-    ///
-    /// * `limit` - 返回的最大记录数
-    ///
-    /// # 返回值
-    ///
-    /// 返回攻击事件列表，按时间降序排列
     pub fn get_attack_events(&self, limit: usize) -> Result<Vec<AttackEvent>> {
+        debug!("Getting attack events with limit: {}", limit);
+
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, source_ip, protocol, port, rule, count, created_at
@@ -212,19 +203,13 @@ impl Storage {
             });
         }
 
+        debug!("Found {} attack events", events.len());
         Ok(events)
     }
 
-    /// 获取封禁记录列表
-    ///
-    /// # 参数
-    ///
-    /// * `status` - 可选的状态过滤（如 "active"）
-    ///
-    /// # 返回值
-    ///
-    /// 返回封禁记录列表，按时间降序排列
     pub fn get_ban_records(&self, status: Option<&str>) -> Result<Vec<BanRecord>> {
+        debug!("Getting ban records with status filter: {:?}", status);
+
         let conn = self.conn.lock().unwrap();
         let mut records = Vec::new();
 
@@ -262,21 +247,13 @@ impl Storage {
             }
         }
 
+        debug!("Found {} ban records", records.len());
         Ok(records)
     }
 
-    /// 清理过期的攻击事件
-    ///
-    /// 删除指定天数之前的攻击事件记录
-    ///
-    /// # 参数
-    ///
-    /// * `days` - 保留天数
-    ///
-    /// # 返回值
-    ///
-    /// 返回删除的记录数
     pub fn cleanup_old_events(&self, days: u32) -> Result<usize> {
+        debug!("Cleaning up attack events older than {} days", days);
+
         let conn = self.conn.lock().unwrap();
         let cutoff = Utc::now().timestamp() - (days as i64 * 24 * 60 * 60);
 

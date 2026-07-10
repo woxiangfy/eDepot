@@ -18,10 +18,26 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct GlobalConfig {
+    #[serde(default = "default_worker_count")]
     pub worker_count: usize,
+    #[serde(default = "default_nft_table")]
     pub nft_table: String,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
+fn default_worker_count() -> usize {
+    4
+}
+
+fn default_nft_table() -> String {
+    "edepot".to_string()
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -176,6 +192,7 @@ worker_count = "not_a_number"
             global: GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: WhitelistConfig {
                 cidr: vec!["192.168.1.0/24".to_string(), "127.0.0.0/8".to_string()],
@@ -198,6 +215,7 @@ worker_count = "not_a_number"
             global: GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: WhitelistConfig {
                 cidr: vec!["::1/128".to_string(), "fe80::/10".to_string()],
@@ -220,6 +238,7 @@ worker_count = "not_a_number"
             global: GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: WhitelistConfig {
                 cidr: vec!["invalid-cidr".to_string()],
@@ -240,6 +259,7 @@ worker_count = "not_a_number"
             global: GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: WhitelistConfig { cidr: Vec::new() },
             rules: vec![
@@ -282,6 +302,7 @@ worker_count = "not_a_number"
             global: GlobalConfig {
                 worker_count: 0,
                 nft_table: "".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),

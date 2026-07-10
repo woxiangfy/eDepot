@@ -1,6 +1,7 @@
 [global]
 worker_count = 4
 nft_table = "edepot"
+log_level = "info"
 
 [whitelist]
 cidr = [

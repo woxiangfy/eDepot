@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+﻿use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 
@@ -82,34 +82,37 @@ impl Rule {
     /// 如果事件匹配规则返回 true，否则返回 false
     pub fn matches(&self, event: &NetworkEvent) -> bool {
         if event.protocol != self.protocol {
+            debug!(
+                "Rule {}: protocol mismatch - event={}, rule={}",
+                self.name, event.protocol, self.protocol
+            );
             return false;
         }
 
         if let Some(ports) = &self.ports {
             if !ports.contains(&event.dst_port) {
+                debug!(
+                    "Rule {}: port mismatch - event={}, rule={:?}",
+                    self.name, event.dst_port, ports
+                );
                 return false;
             }
         }
 
+        debug!(
+            "Rule {}: matched event from {} port {}",
+            self.name, event.src_ip, event.dst_port
+        );
         true
     }
 
-    /// 获取规则匹配的键
-    ///
-    /// 根据规则类型（IP/CIDR）返回不同的键
-    ///
-    /// # 参数
-    ///
-    /// * `ip` - IP 地址
-    ///
-    /// # 返回值
-    ///
-    /// 返回规则键（IP地址或CIDR）
     pub fn get_key(&self, ip: &IpAddr) -> String {
-        match self.rule_type {
+        let key = match self.rule_type {
             RuleType::Ip => ip.to_string(),
             RuleType::Cidr => self.get_cidr_key(ip),
-        }
+        };
+        debug!("Rule {}: IP {} -> key {}", self.name, ip, key);
+        key
     }
 
     /// 获取 CIDR 键
@@ -218,6 +221,7 @@ impl RuleEngine {
         tx: mpsc::Sender<BanAction>,
         storage_tx: mpsc::Sender<BanAction>,
     ) -> Self {
+        debug!("RuleEngine created with {} rules", rules.len());
         Self {
             rules,
             states: HashMap::new(),
@@ -226,26 +230,36 @@ impl RuleEngine {
         }
     }
 
-    /// 评估网络事件
-    ///
-    /// 对每个匹配的规则评估事件，触发封禁动作
-    ///
-    /// # 参数
-    ///
-    /// * `event` - 网络事件
     pub fn evaluate(&mut self, event: &NetworkEvent) -> Result<()> {
+        debug!("Evaluating event: {} -> port {} (proto {})", event.src_ip, event.dst_port, event.protocol);
+
         for rule in &self.rules {
             if !rule.matches(event) {
+                debug!("Rule {}: not matched", rule.name);
                 continue;
             }
 
             let key = rule.get_key(&event.src_ip);
+            debug!("Rule {}: using key {}", rule.name, key);
+
             let rule_states = self.states.entry(rule.name.clone()).or_default();
             let state = rule_states
                 .entry(key.clone())
                 .or_insert_with(|| RuleState::new(rule.window_secs));
 
+            debug!(
+                "Rule {}: current count={}, threshold={}",
+                rule.name,
+                state.window.count(),
+                rule.threshold
+            );
+
             if state.should_ban(rule.threshold, rule.block_duration) {
+                debug!(
+                    "Rule {}: threshold exceeded, triggering ban for {}",
+                    rule.name, event.src_ip
+                );
+
                 let ban_action = BanAction::new(
                     event.src_ip,
                     rule.name.clone(),
@@ -255,28 +269,34 @@ impl RuleEngine {
 
                 if let Err(e) = self.tx.try_send(ban_action.clone()) {
                     debug!("Failed to send ban action to nft: {}", e);
+                } else {
+                    debug!("Ban action sent to nft controller");
                 }
 
                 if let Err(e) = self.storage_tx.try_send(ban_action) {
                     debug!("Failed to send ban action to storage: {}", e);
+                } else {
+                    debug!("Ban action sent to storage");
                 }
 
                 info!("Ban triggered: {} by rule {}", event.src_ip, rule.name);
+            } else {
+                debug!(
+                    "Rule {}: count={} < threshold={}, no ban",
+                    rule.name,
+                    state.window.count(),
+                    rule.threshold
+                );
             }
         }
 
+        debug!("Event evaluation completed");
         Ok(())
     }
 
-    /// 清理过期状态
-    ///
-    /// 移除过期的规则状态，控制内存使用
-    ///
-    /// # 参数
-    ///
-    /// * `now` - 当前时间
-    /// * `max_entries` - 最大条目数
     pub fn cleanup(&mut self, now: Instant, max_entries: usize) {
+        debug!("Starting cleanup, current states={}", self.state_count());
+
         for (rule_name, rule_states) in self.states.iter_mut() {
             let before_count = rule_states.len();
             rule_states.retain(|_, state| {
@@ -290,7 +310,14 @@ impl RuleEngine {
         }
 
         let total_entries: usize = self.states.values().map(|m| m.len()).sum();
+        debug!("After cleanup: {} entries", total_entries);
+
         if total_entries > max_entries {
+            debug!(
+                "Total entries {} exceeds max {}: performing memory limit cleanup",
+                total_entries, max_entries
+            );
+
             for rule_states in self.states.values_mut() {
                 let keys_to_remove: Vec<_> = rule_states
                     .iter()
@@ -301,11 +328,18 @@ impl RuleEngine {
                 let to_remove = keys_to_remove
                     .len()
                     .saturating_sub(max_entries / self.rules.len());
+                debug!("Removing {} non-banned entries", to_remove);
+
                 for key in keys_to_remove.into_iter().take(to_remove) {
                     rule_states.remove(&key);
                 }
             }
+
+            let after_limit_cleanup: usize = self.states.values().map(|m| m.len()).sum();
+            debug!("After memory limit cleanup: {} entries", after_limit_cleanup);
         }
+
+        debug!("Cleanup completed");
     }
 
     /// 获取规则数量

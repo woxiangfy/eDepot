@@ -1,4 +1,4 @@
-use std::time::Instant;
+﻿use std::time::Instant;
 
 const BUCKET_COUNT: usize = 4;
 

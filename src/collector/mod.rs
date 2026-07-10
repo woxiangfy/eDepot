@@ -1,7 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+﻿use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::error::Result;
 use crate::event::NetworkEvent;
@@ -21,15 +21,6 @@ pub struct NetworkEventRaw {
 }
 
 impl NetworkEventRaw {
-    /// 创建新的原始网络事件
-    ///
-    /// # 参数
-    ///
-    /// * `family` - 地址族 (2=IPv4, 10=IPv6)
-    /// * `src_ip` - 源 IP 地址（16字节数组）
-    /// * `dst_port` - 目标端口（大端序）
-    /// * `protocol` - 协议类型
-    /// * `timestamp` - 时间戳（纳秒）
     pub fn new(family: u8, src_ip: [u8; 16], dst_port: u16, protocol: u8, timestamp: u64) -> Self {
         Self {
             family,
@@ -41,9 +32,6 @@ impl NetworkEventRaw {
         }
     }
 
-    /// 将原始事件转换为 NetworkEvent
-    ///
-    /// 根据 family 字段判断是 IPv4 还是 IPv6，然后解析 src_ip 字段
     pub fn to_network_event(&self) -> NetworkEvent {
         let src_ip = if self.family == 2 {
             let mut bytes = [0u8; 4];
@@ -62,12 +50,10 @@ impl NetworkEventRaw {
         )
     }
 
-    /// 判断是否为 IPv4 事件
     pub fn is_ipv4(&self) -> bool {
         self.family == 2
     }
 
-    /// 判断是否为 IPv6 事件
     pub fn is_ipv6(&self) -> bool {
         self.family == 10
     }
@@ -80,19 +66,21 @@ pub struct Collector {
 }
 
 impl Collector {
-    /// 创建新的采集器
-    ///
-    /// # 参数
-    ///
-    /// * `tx` - 事件发送通道，用于将采集到的事件发送给分发器
     pub async fn new(tx: mpsc::Sender<NetworkEvent>) -> Result<Self> {
         #[cfg(feature = "ebpf")]
         {
+            debug!("Loading eBPF bytes from BPF_OBJECT");
             let bpf_bytes = include_bytes!(env!("BPF_OBJECT"));
+            debug!("eBPF bytes size: {} bytes", bpf_bytes.len());
+
             let bpf = if bpf_bytes.is_empty() {
+                debug!("eBPF bytes are empty, running without eBPF");
                 None
             } else {
-                Some(aya::Bpf::load(bpf_bytes)?)
+                debug!("Loading eBPF program from bytes");
+                let loaded_bpf = aya::Bpf::load(bpf_bytes)?;
+                debug!("eBPF program loaded successfully");
+                Some(loaded_bpf)
             };
 
             info!("Collector created with eBPF support");
@@ -101,95 +89,101 @@ impl Collector {
 
         #[cfg(not(feature = "ebpf"))]
         {
+            debug!("eBPF feature not enabled, creating collector without eBPF");
             info!("Collector created (eBPF disabled)");
             Ok(Self { tx })
         }
     }
 
-    /// 加载 tracepoint 程序
-    ///
-    /// 加载用于监控 TCP 连接状态变化的 tracepoint 程序
     pub async fn load_tracepoint(&mut self) -> Result<()> {
         #[cfg(feature = "ebpf")]
         {
             if let Some(bpf) = &mut self.bpf {
+                debug!("Loading tracepoint program: inet_sock_set_state");
                 let tracepoint = bpf
                     .program_mut("inet_sock_set_state")
                     .ok_or(Error::ProgramNotFound("inet_sock_set_state"))?;
+                debug!("Found tracepoint program, loading...");
                 tracepoint.load()?;
+                debug!("Tracepoint program loaded, attaching...");
                 tracepoint.attach()?;
                 info!("Loaded tracepoint: inet_sock_set_state");
+                debug!("Tracepoint attached successfully");
             } else {
                 info!("eBPF not available, tracepoint skipped");
+                debug!("No eBPF object available for tracepoint");
             }
         }
 
         #[cfg(not(feature = "ebpf"))]
         {
             info!("eBPF feature disabled, tracepoint skipped");
+            debug!("eBPF feature not enabled, skipping tracepoint");
         }
 
         Ok(())
     }
 
-    /// 加载 XDP 程序
-    ///
-    /// 在指定网络接口上加载 XDP 程序，用于快速过滤数据包
-    ///
-    /// # 参数
-    ///
-    /// * `interface` - 网络接口名称（如 eth0）
     pub async fn load_xdp(&mut self, interface: &str) -> Result<()> {
         #[cfg(feature = "ebpf")]
         {
             if let Some(bpf) = &mut self.bpf {
+                debug!("Loading XDP program on interface: {}", interface);
                 let xdp = bpf
                     .program_mut("xdp_syn_filter")
                     .ok_or(Error::ProgramNotFound("xdp_syn_filter"))?;
+                debug!("Found XDP program, loading...");
                 xdp.load()?;
+                debug!("XDP program loaded, attaching to interface...");
                 xdp.attach(interface, aya::programs::XdpFlags::default())?;
                 info!("Attached XDP program to interface: {}", interface);
+                debug!("XDP program attached successfully to {}", interface);
             } else {
                 info!("eBPF not available, XDP skipped");
+                debug!("No eBPF object available for XDP on {}", interface);
             }
         }
 
         #[cfg(not(feature = "ebpf"))]
         {
             info!("eBPF feature disabled, XDP skipped for {}", interface);
+            debug!("eBPF feature not enabled, skipping XDP on {}", interface);
         }
 
         Ok(())
     }
 
-    /// 启动事件循环
-    ///
-    /// 开始从 eBPF 程序接收事件并发送到事件通道
     pub async fn start_event_loop(&self) -> Result<()> {
         #[cfg(feature = "ebpf")]
         {
             use aya::maps::perf::AsyncPerfEventArray;
             use std::mem;
-            use tracing::debug;
 
             if let Some(bpf) = &self.bpf {
-                let mut events = AsyncPerfEventArray::try_from(
-                    bpf.map("EVENTS").ok_or(Error::MapNotFound("EVENTS"))?,
-                )?;
+                debug!("Setting up event loop with eBPF");
+                let events_map = bpf.map("EVENTS").ok_or(Error::MapNotFound("EVENTS"))?;
+                debug!("Found EVENTS map, creating AsyncPerfEventArray");
+
+                let mut events = AsyncPerfEventArray::try_from(events_map)?;
+                debug!("AsyncPerfEventArray created");
 
                 let tx = self.tx.clone();
+                let cpu_count = aya::util::online_cpus().unwrap().len();
+                debug!("Spawning event readers for {} CPUs", cpu_count);
 
-                for cpu in 0..aya::util::online_cpus().unwrap().len() {
+                for cpu in 0..cpu_count {
                     let mut buf = events.open(cpu, None, None)?;
                     let tx = tx.clone();
 
                     tokio::task::spawn(async move {
+                        debug!("Event reader for CPU {} started", cpu);
                         let mut buffers = vec![0u8; 4096];
 
                         loop {
                             let events = buf.read_events(&mut buffers).await;
                             match events {
                                 Ok(read) => {
+                                    debug!("CPU {}: read {} events", cpu, read.read);
                                     for i in 0..read.read {
                                         let offset = i * mem::size_of::<NetworkEventRaw>();
                                         if offset + mem::size_of::<NetworkEventRaw>() <= read.read {
@@ -198,46 +192,51 @@ impl Collector {
                                                     as *const NetworkEventRaw)
                                             };
                                             let event = raw.to_network_event();
+                                            debug!(
+                                                "CPU {}: event from {} port {} protocol {}",
+                                                cpu, event.src_ip, event.dst_port, event.protocol
+                                            );
                                             if tx.send(event).await.is_err() {
-                                                debug!("Event channel closed, exiting event loop");
+                                                debug!("Event channel closed, exiting event loop for CPU {}", cpu);
                                                 break;
                                             }
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("Perf event read error: {}", e);
+                                    warn!("Perf event read error on CPU {}: {}", cpu, e);
                                     break;
                                 }
                             }
                         }
+                        debug!("Event reader for CPU {} exited", cpu);
                     });
                 }
 
                 info!("Event loop started");
+                debug!("Event loop fully initialized");
             } else {
                 info!("eBPF not available, event loop running in stub mode");
+                debug!("No eBPF object, event loop in stub mode");
             }
         }
 
         #[cfg(not(feature = "ebpf"))]
         {
             info!("eBPF feature disabled, event loop running in stub mode");
+            debug!("eBPF feature not enabled, event loop in stub mode");
         }
 
         Ok(())
     }
 
-    /// 发送测试事件（用于测试）
-    ///
-    /// # 参数
-    ///
-    /// * `event` - 要发送的网络事件
     pub async fn send_test_event(&self, event: NetworkEvent) -> Result<()> {
+        debug!("Sending test event: {} -> port {} (proto {})", event.src_ip, event.dst_port, event.protocol);
         self.tx.send(event).await.map_err(|e| {
             warn!("Failed to send event: {}", e);
             crate::error::Error::ChannelSendFailed
         })?;
+        debug!("Test event sent successfully");
         Ok(())
     }
 }

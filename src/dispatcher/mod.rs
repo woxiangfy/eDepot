@@ -107,6 +107,7 @@ mod tests {
             global: crate::config::GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
@@ -131,6 +132,7 @@ mod tests {
             global: crate::config::GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
@@ -169,6 +171,7 @@ mod tests {
             global: crate::config::GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
@@ -206,6 +209,7 @@ mod tests {
             global: crate::config::GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: crate::config::WhitelistConfig {
                 cidr: vec!["127.0.0.0/8".to_string(), "::1/128".to_string()],
@@ -237,6 +241,7 @@ mod tests {
             global: crate::config::GlobalConfig {
                 worker_count: 1,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: crate::config::WhitelistConfig {
                 cidr: vec!["127.0.0.0/8".to_string()],
@@ -283,6 +288,7 @@ mod tests {
             global: crate::config::GlobalConfig {
                 worker_count: 2,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
@@ -345,6 +351,7 @@ mod tests {
             global: crate::config::GlobalConfig {
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
             },
             whitelist: crate::config::WhitelistConfig { cidr: Vec::new() },
             rules: Vec::new(),
