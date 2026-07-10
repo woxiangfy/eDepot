@@ -26,10 +26,6 @@ pub struct GlobalConfig {
     pub nft_table: String,
     #[serde(default = "default_log_level")]
     pub log_level: String,
-    #[serde(default = "default_event_source")]
-    pub event_source: String,
-    #[serde(default = "default_interface")]
-    pub interface: String,
     #[serde(default = "default_poll_interval_ms")]
     pub poll_interval_ms: u64,
 }
@@ -46,14 +42,6 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
-fn default_event_source() -> String {
-    "procnet".to_string()
-}
-
-fn default_interface() -> String {
-    "eth0".to_string()
-}
-
 fn default_poll_interval_ms() -> u64 {
     1000
 }
@@ -64,8 +52,6 @@ impl Default for GlobalConfig {
             worker_count: default_worker_count(),
             nft_table: default_nft_table(),
             log_level: default_log_level(),
-            event_source: default_event_source(),
-            interface: default_interface(),
             poll_interval_ms: default_poll_interval_ms(),
         }
     }
@@ -224,8 +210,6 @@ worker_count = "not_a_number"
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
                 log_level: "info".to_string(),
-                event_source: "procnet".to_string(),
-                interface: "eth0".to_string(),
                 poll_interval_ms: 1000,
             },
             whitelist: WhitelistConfig {
@@ -250,8 +234,6 @@ worker_count = "not_a_number"
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
                 log_level: "info".to_string(),
-                event_source: "procnet".to_string(),
-                interface: "eth0".to_string(),
                 poll_interval_ms: 1000,
             },
             whitelist: WhitelistConfig {
@@ -276,8 +258,6 @@ worker_count = "not_a_number"
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
                 log_level: "info".to_string(),
-                event_source: "procnet".to_string(),
-                interface: "eth0".to_string(),
                 poll_interval_ms: 1000,
             },
             whitelist: WhitelistConfig {
@@ -300,8 +280,6 @@ worker_count = "not_a_number"
                 worker_count: 4,
                 nft_table: "edepot".to_string(),
                 log_level: "info".to_string(),
-                event_source: "procnet".to_string(),
-                interface: "eth0".to_string(),
                 poll_interval_ms: 1000,
             },
             whitelist: WhitelistConfig { cidr: Vec::new() },
@@ -346,8 +324,6 @@ worker_count = "not_a_number"
                 worker_count: 0,
                 nft_table: "".to_string(),
                 log_level: "info".to_string(),
-                event_source: "procnet".to_string(),
-                interface: "eth0".to_string(),
                 poll_interval_ms: 1000,
             },
             whitelist: WhitelistConfig { cidr: Vec::new() },
@@ -361,22 +337,5 @@ worker_count = "not_a_number"
         assert_eq!(config.rule_count(), 0);
         assert_eq!(config.whitelist_count(), 0);
         assert!(!config.is_whitelisted(&IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
-    }
-
-    #[test]
-    fn test_event_source_defaults() {
-        let config = Config {
-            global: GlobalConfig::default(),
-            whitelist: WhitelistConfig { cidr: Vec::new() },
-            rules: Vec::new(),
-            memory: MemoryConfig {
-                max_entries: 100000,
-                cleanup_interval: 60,
-            },
-        };
-
-        assert_eq!(config.global.event_source, "procnet");
-        assert_eq!(config.global.interface, "eth0");
-        assert_eq!(config.global.poll_interval_ms, 1000);
     }
 }
