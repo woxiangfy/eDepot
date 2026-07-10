@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
-use tokio::time::{sleep, Duration};
+use tokio::time::{interval, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::error::Result;
@@ -26,6 +26,8 @@ pub struct Collector {
     tx: mpsc::Sender<NetworkEvent>,
     poll_interval_ms: u64,
     previous_connections: HashSet<ConnectionKey>,
+    scratch: HashSet<ConnectionKey>,
+    dropped_events: std::sync::atomic::AtomicU64,
 }
 
 impl Collector {
@@ -39,6 +41,8 @@ impl Collector {
             tx,
             poll_interval_ms,
             previous_connections: HashSet::new(),
+            scratch: HashSet::new(),
+            dropped_events: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -49,45 +53,59 @@ impl Collector {
         );
         debug!("Polling /proc/net/tcp, /proc/net/tcp6, /proc/net/udp, /proc/net/udp6");
 
-        loop {
-            if let Err(e) = self.poll_once().await {
-                error!("Error polling /proc/net: {}", e);
-            }
+        let mut poll_interval = interval(Duration::from_millis(self.poll_interval_ms));
+        poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-            sleep(Duration::from_millis(self.poll_interval_ms)).await;
+        let mut log_interval = interval(Duration::from_secs(60));
+
+        loop {
+            tokio::select! {
+                _ = poll_interval.tick() => {
+                    let start = Instant::now();
+                    if let Err(e) = self.poll_once().await {
+                        error!("Error polling /proc/net: {}", e);
+                    }
+                    debug!("Poll cycle completed in {:?}", start.elapsed());
+                }
+                _ = log_interval.tick() => {
+                    let dropped = self.dropped_events.swap(0, std::sync::atomic::Ordering::Relaxed);
+                    if dropped > 0 {
+                        warn!("Total {} events dropped due to channel backpressure in last minute", dropped);
+                    }
+                }
+            }
         }
     }
 
     async fn poll_once(&mut self) -> Result<()> {
-        let tcp_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/tcp", 6))
-            .await
-            .map_err(|e| {
-                error!("Failed to process /proc/net/tcp: {}", e);
-                crate::error::Error::ChannelSendFailed
-            })?;
+        let (tcp_results, tcp6_results, udp_results, udp6_results) = tokio::join!(
+            spawn_blocking(|| Self::process_proc_file_sync("/proc/net/tcp", 6)),
+            spawn_blocking(|| Self::process_proc_file_sync("/proc/net/tcp6", 6)),
+            spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp", 17)),
+            spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp6", 17)),
+        );
 
-        let tcp6_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/tcp6", 6))
-            .await
-            .map_err(|e| {
-                error!("Failed to process /proc/net/tcp6: {}", e);
-                crate::error::Error::ChannelSendFailed
-            })?;
+        let tcp_results = tcp_results.map_err(|e| {
+            error!("Failed to process /proc/net/tcp: {}", e);
+            crate::error::Error::ChannelSendFailed
+        })?;
 
-        let udp_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp", 17))
-            .await
-            .map_err(|e| {
-                error!("Failed to process /proc/net/udp: {}", e);
-                crate::error::Error::ChannelSendFailed
-            })?;
+        let tcp6_results = tcp6_results.map_err(|e| {
+            error!("Failed to process /proc/net/tcp6: {}", e);
+            crate::error::Error::ChannelSendFailed
+        })?;
 
-        let udp6_results = spawn_blocking(|| Self::process_proc_file_sync("/proc/net/udp6", 17))
-            .await
-            .map_err(|e| {
-                error!("Failed to process /proc/net/udp6: {}", e);
-                crate::error::Error::ChannelSendFailed
-            })?;
+        let udp_results = udp_results.map_err(|e| {
+            error!("Failed to process /proc/net/udp: {}", e);
+            crate::error::Error::ChannelSendFailed
+        })?;
 
-        let mut new_connections = HashSet::new();
+        let udp6_results = udp6_results.map_err(|e| {
+            error!("Failed to process /proc/net/udp6: {}", e);
+            crate::error::Error::ChannelSendFailed
+        })?;
+
+        self.scratch.clear();
 
         for (key, event) in tcp_results
             .into_iter()
@@ -95,20 +113,21 @@ impl Collector {
             .chain(udp_results)
             .chain(udp6_results)
         {
-            new_connections.insert(key.clone());
+            self.scratch.insert(key.clone());
 
             if !self.previous_connections.contains(&key) {
                 debug!(
                     "New connection: {} -> port {} (proto {})",
                     event.src_ip, event.dst_port, event.protocol
                 );
-                if self.tx.send(event).await.is_err() {
-                    warn!("Failed to send event to channel");
+                if self.tx.try_send(event).is_err() {
+                    self.dropped_events.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    warn!("Channel full, dropping event");
                 }
             }
         }
 
-        self.previous_connections = new_connections;
+        std::mem::swap(&mut self.previous_connections, &mut self.scratch);
         Ok(())
     }
 
@@ -153,13 +172,10 @@ impl Collector {
     }
 
     fn parse_line_static(line: &str, protocol: u8) -> Option<NetworkEvent> {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 3 {
-            return None;
-        }
-
-        let local_address = parts[1];
-        let remote_address = parts[2];
+        let mut parts = line.split_whitespace();
+        parts.next()?;
+        let local_address = parts.next()?;
+        let remote_address = parts.next()?;
 
         let (_local_ip, local_port) = match Self::parse_address_static(local_address) {
             Some(ip_port) => ip_port,

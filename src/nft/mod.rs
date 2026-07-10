@@ -36,6 +36,8 @@ impl NftController {
         nft.create_sets().map_err(crate::nft::error::Error::from)?;
         nft.create_chains()
             .map_err(crate::nft::error::Error::from)?;
+        nft.create_block_rules()
+            .map_err(crate::nft::error::Error::from)?;
 
         info!("Syncing existing banned IPs from nftables");
         nft.sync_from_nftables()

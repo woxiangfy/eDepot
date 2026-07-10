@@ -5,8 +5,10 @@ use std::sync::{Arc, Mutex};
 use ipnet::IpNet;
 use nftables::helper::{apply_ruleset, get_current_ruleset, NftablesError};
 use nftables::schema::{
-    Chain, Element, NfCmd, NfListObject, Nftables, Set, SetFlag, SetType, SetTypeValue, Table,
+    Chain, Element, NfCmd, NfListObject, Nftables, Rule, Set, SetFlag, SetType, SetTypeValue,
+    Table,
 };
+use nftables::stmt::{Match, Operator, Statement};
 use nftables::types::{NfChainPolicy, NfFamily, NfHook};
 use thiserror::Error;
 use tracing::{debug, error, warn};
@@ -553,4 +555,76 @@ impl NftRawController {
     }
 }
 
+use nftables::expr::{Expression, NamedExpression, Payload, PayloadField};
 use nftables::schema::NfObject;
+
+impl NftRawController {
+    pub fn create_block_rules(&self) -> Result<()> {
+        let ipv4_rule = Rule {
+            family: NfFamily::INet,
+            table: self.table.clone().into(),
+            chain: "ingress".into(),
+            expr: vec![
+                Statement::Match(Match {
+                    left: Expression::Named(NamedExpression::Payload(Payload::PayloadField(
+                        PayloadField {
+                            protocol: "ip".into(),
+                            field: "saddr".into(),
+                        },
+                    ))),
+                    right: Expression::String(format!("@{}", self.ipv4_set).into()),
+                    op: Operator::IN,
+                }),
+                Statement::Drop(None),
+            ]
+            .into(),
+            ..Default::default()
+        };
+
+        let ipv6_rule = Rule {
+            family: NfFamily::INet,
+            table: self.table.clone().into(),
+            chain: "ingress".into(),
+            expr: vec![
+                Statement::Match(Match {
+                    left: Expression::Named(NamedExpression::Payload(Payload::PayloadField(
+                        PayloadField {
+                            protocol: "ip6".into(),
+                            field: "saddr".into(),
+                        },
+                    ))),
+                    right: Expression::String(format!("@{}", self.ipv6_set).into()),
+                    op: Operator::IN,
+                }),
+                Statement::Drop(None),
+            ]
+            .into(),
+            ..Default::default()
+        };
+
+        let nftables = Nftables {
+            objects: vec![
+                NfObject::CmdObject(NfCmd::Add(NfListObject::Rule(ipv4_rule))),
+                NfObject::CmdObject(NfCmd::Add(NfListObject::Rule(ipv6_rule))),
+            ]
+            .into(),
+        };
+
+        match apply_ruleset(&nftables) {
+            Ok(_) => {
+                debug!("Created blocking rules for table: {}", self.table);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("file exists") {
+                    debug!("Blocking rules already exist for table: {}", self.table);
+                    Ok(())
+                } else {
+                    error!("Failed to create blocking rules: {}", e);
+                    Err(Error::ChainCreationFailed)
+                }
+            }
+        }
+    }
+}
