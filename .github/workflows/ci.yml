@@ -84,7 +84,13 @@ jobs:
             libsqlite3-dev
 
       - name: Run tests
-        run: cargo test --all --verbose -- --test-threads=1
+        run: cargo test --all --verbose -- --test-threads=1 2>&1 | tee test-output.txt
+
+      - name: Upload test output
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test-output.txt
 
       - name: Run doc tests
         run: cargo test --doc --verbose
