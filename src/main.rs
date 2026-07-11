@@ -15,6 +15,83 @@ use edepot::rules::{Rule, RuleEngine};
 use edepot::storage::Storage;
 use edepot::worker::Worker;
 
+/// CLI 用法说明
+const USAGE: &str = "\
+eDepot Host Defense System
+
+USAGE:
+    edepot <COMMAND> [OPTIONS]
+
+COMMANDS:
+    start          启动防御服务（加载配置、初始化 nftables、开始监控）
+    check          校验配置文件（不启动服务，仅检查配置是否正确）
+
+OPTIONS:
+    -c, --config <FILE>    指定配置文件路径（默认: config.toml）
+    -h, --help             显示帮助信息
+";
+
+/// CLI 参数解析
+struct CliArgs {
+    command: String,
+    config_path: String,
+}
+
+/// 解析命令行参数
+///
+/// 支持的格式：
+///   edepot start [-c config.toml]
+///   edepot check [-c config.toml]
+///   edepot --help / -h
+fn parse_args() -> Result<CliArgs> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() < 2 {
+        eprintln!("{}", USAGE);
+        std::process::exit(1);
+    }
+
+    let first = &args[1];
+    if first == "-h" || first == "--help" {
+        println!("{}", USAGE);
+        std::process::exit(0);
+    }
+
+    let command = first.clone();
+    if command != "start" && command != "check" {
+        eprintln!("Error: unknown command '{}'\n", command);
+        eprintln!("{}", USAGE);
+        std::process::exit(1);
+    }
+
+    let mut config_path = "config.toml".to_string();
+    let mut i = 2;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-c" | "--config" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: missing value for '{}'", args[i]);
+                    std::process::exit(1);
+                }
+                config_path = args[i + 1].clone();
+                i += 2;
+            }
+            other => {
+                eprintln!("Error: unknown option '{}'", other);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    Ok(CliArgs {
+        command,
+        config_path,
+    })
+}
+
+/// 初始化日志系统
+///
+/// 根据配置文件中的 log_level 设置全局日志级别
 fn init_logging(log_level: &str) {
     let level = match log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
@@ -36,9 +113,62 @@ fn init_logging(log_level: &str) {
     info!("Logging initialized with level: {}", level);
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config = Arc::new(Config::from_file("config.toml")?);
+/// 执行 check 命令：校验配置文件
+///
+/// 加载并验证配置文件，输出校验结果，不启动服务
+fn run_check(config_path: &str) -> Result<()> {
+    println!("Checking config file: {}", config_path);
+
+    let config = Config::from_file(config_path)?;
+
+    config.validate()?;
+
+    // 尝试解析规则，确保规则配置可被正确转换
+    let rules: Vec<Rule> = config
+        .rules
+        .iter()
+        .map(Rule::from_config)
+        .collect::<std::result::Result<_, _>>()
+        .map_err(|e| edepot::error::Error::Rules(e))?;
+
+    println!("Config validation passed!");
+    println!("  Worker count: {}", config.global.worker_count);
+    println!("  NFT table: {}", config.global.nft_table);
+    println!("  Poll interval: {}ms", config.global.poll_interval_ms);
+    println!("  Log level: {}", config.global.log_level);
+    println!("  Whitelist CIDRs: {}", config.whitelist_count());
+    println!(
+        "  Rules: {} (parsed {} successfully)",
+        config.rules.len(),
+        rules.len()
+    );
+    println!(
+        "  Memory: max_entries={}, cleanup_interval={}s",
+        config.memory.max_entries, config.memory.cleanup_interval
+    );
+
+    for rule in &rules {
+        println!(
+            "    - {} (proto={}, ports={:?}, type={:?}, threshold={}, window={}s, block={}s)",
+            rule.name,
+            rule.protocol,
+            rule.ports,
+            rule.rule_type,
+            rule.threshold,
+            rule.window_secs,
+            rule.block_duration
+        );
+    }
+
+    Ok(())
+}
+
+/// 执行 start 命令：启动防御服务
+///
+/// 完整启动流程：加载配置 -> 环境检查 -> 初始化存储 -> 创建通道 ->
+/// 初始化 nftables -> 启动 Worker -> 启动 Dispatcher -> 启动 Collector
+async fn run_start(config_path: &str) -> Result<()> {
+    let config = Arc::new(Config::from_file(config_path)?);
 
     init_logging(&config.global.log_level);
 
@@ -171,6 +301,17 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = parse_args()?;
+
+    match cli.command.as_str() {
+        "check" => run_check(&cli.config_path),
+        "start" => run_start(&cli.config_path).await,
+        _ => unreachable!(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,5 +398,235 @@ block_duration = 3600
 
         assert!(rules_result.is_ok());
         assert_eq!(rules_result.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_validate_valid_config() {
+        let config = Config {
+            global: edepot::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
+                poll_interval_ms: 1000,
+            },
+            whitelist: edepot::config::WhitelistConfig {
+                cidr: vec!["127.0.0.0/8".to_string(), "::1/128".to_string()],
+            },
+            rules: vec![edepot::config::RuleConfig {
+                name: "ssh_bruteforce".to_string(),
+                protocol: "tcp".to_string(),
+                ports: Some(vec![22]),
+                rule_type: "ip".to_string(),
+                window_secs: 20,
+                threshold: 8,
+                block_duration: 3600,
+                ipv4_prefix: None,
+                ipv6_prefix: None,
+            }],
+            memory: edepot::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
+        };
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_worker_count() {
+        let config = Config {
+            global: edepot::config::GlobalConfig {
+                worker_count: 0,
+                nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
+                poll_interval_ms: 1000,
+            },
+            whitelist: edepot::config::WhitelistConfig { cidr: Vec::new() },
+            rules: Vec::new(),
+            memory: edepot::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_invalid_cidr() {
+        let config = Config {
+            global: edepot::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
+                poll_interval_ms: 1000,
+            },
+            whitelist: edepot::config::WhitelistConfig {
+                cidr: vec!["invalid-cidr".to_string()],
+            },
+            rules: Vec::new(),
+            memory: edepot::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_invalid_protocol() {
+        let config = Config {
+            global: edepot::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
+                poll_interval_ms: 1000,
+            },
+            whitelist: edepot::config::WhitelistConfig { cidr: Vec::new() },
+            rules: vec![edepot::config::RuleConfig {
+                name: "bad_rule".to_string(),
+                protocol: "icmp".to_string(),
+                ports: None,
+                rule_type: "ip".to_string(),
+                window_secs: 20,
+                threshold: 8,
+                block_duration: 3600,
+                ipv4_prefix: None,
+                ipv6_prefix: None,
+            }],
+            memory: edepot::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_cidr_rule_missing_prefix() {
+        let config = Config {
+            global: edepot::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
+                poll_interval_ms: 1000,
+            },
+            whitelist: edepot::config::WhitelistConfig { cidr: Vec::new() },
+            rules: vec![edepot::config::RuleConfig {
+                name: "cidr_rule".to_string(),
+                protocol: "tcp".to_string(),
+                ports: None,
+                rule_type: "cidr".to_string(),
+                window_secs: 60,
+                threshold: 100,
+                block_duration: 3600,
+                ipv4_prefix: None,
+                ipv6_prefix: None,
+            }],
+            memory: edepot::config::MemoryConfig {
+                max_entries: 100000,
+                cleanup_interval: 60,
+            },
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_invalid_memory() {
+        let config = Config {
+            global: edepot::config::GlobalConfig {
+                worker_count: 4,
+                nft_table: "edepot".to_string(),
+                log_level: "info".to_string(),
+                poll_interval_ms: 1000,
+            },
+            whitelist: edepot::config::WhitelistConfig { cidr: Vec::new() },
+            rules: Vec::new(),
+            memory: edepot::config::MemoryConfig {
+                max_entries: 0,
+                cleanup_interval: 60,
+            },
+        };
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_parse_args_no_args() {
+        // 无参数应返回错误（通过进程退出）
+        // 此测试验证 parse_args 在无参数时的行为
+        // 由于 parse_args 直接调用 std::process::exit，
+        // 我们只能测试有参数的场景
+    }
+
+    #[test]
+    fn test_run_check_valid_config() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+        drop(temp_file);
+
+        let mut file = File::create(&path).unwrap();
+        writeln!(
+            file,
+            r#"
+[global]
+worker_count = 4
+nft_table = "edepot"
+log_level = "info"
+poll_interval_ms = 1000
+
+[whitelist]
+cidr = ["127.0.0.0/8"]
+
+[memory]
+max_entries = 100000
+cleanup_interval = 60
+
+[[rules]]
+name = "ssh_bruteforce"
+protocol = "tcp"
+ports = [22]
+rule_type = "ip"
+window_secs = 20
+threshold = 8
+block_duration = 3600
+"#
+        )
+        .unwrap();
+
+        let result = run_check(path.to_str().unwrap());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_run_check_invalid_config() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+        drop(temp_file);
+
+        let mut file = File::create(&path).unwrap();
+        writeln!(
+            file,
+            r#"
+[global]
+worker_count = 0
+nft_table = ""
+poll_interval_ms = 0
+
+[whitelist]
+cidr = ["invalid"]
+
+[memory]
+max_entries = 0
+cleanup_interval = 0
+"#
+        )
+        .unwrap();
+
+        let result = run_check(path.to_str().unwrap());
+        assert!(result.is_err());
     }
 }

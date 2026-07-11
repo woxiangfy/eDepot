@@ -35,9 +35,31 @@ cp config.toml my-config.toml
 
 ### 运行
 
+eDepot 支持以下命令：
+
 ```bash
-sudo ./target/release/edepot
+# 校验配置文件（不启动服务）
+sudo ./target/release/edepot check
+
+# 指定配置文件校验
+sudo ./target/release/edepot check -c /path/to/config.toml
+
+# 启动防御服务
+sudo ./target/release/edepot start
+
+# 指定配置文件启动
+sudo ./target/release/edepot start -c /path/to/config.toml
+
+# 查看帮助
+./target/release/edepot --help
 ```
+
+| 命令 | 说明 |
+|------|------|
+| `check` | 校验配置文件，检查配置项完整性和有效性，不启动服务 |
+| `start` | 启动防御服务，包括环境检测、nftables 初始化、流量监控 |
+| `-c, --config <FILE>` | 指定配置文件路径，默认 `config.toml` |
+| `-h, --help` | 显示帮助信息 |
 
 ## 配置说明
 

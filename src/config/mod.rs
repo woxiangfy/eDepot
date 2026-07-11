@@ -14,6 +14,9 @@ pub enum Error {
 
     #[error("invalid cidr: {0}")]
     InvalidCidr(String),
+
+    #[error("validation error: {0}")]
+    Validation(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -132,6 +135,112 @@ impl Config {
     /// 获取白名单 CIDR 数量
     pub fn whitelist_count(&self) -> usize {
         self.whitelist.cidr.len()
+    }
+
+    /// 校验配置文件的完整性和有效性
+    ///
+    /// 检查项包括：
+    /// - worker_count 必须 > 0
+    /// - nft_table 不能为空
+    /// - poll_interval_ms 必须 > 0
+    /// - 白名单 CIDR 格式必须正确
+    /// - 每条规则的字段必须有效（协议、rule_type、端口、前缀等）
+    /// - memory 配置必须有效
+    ///
+    /// # 返回值
+    ///
+    /// 校验通过返回 Ok(())，否则返回对应的错误信息
+    pub fn validate(&self) -> Result<()> {
+        // 校验 global 配置
+        if self.global.worker_count == 0 {
+            return Err(Error::Validation("worker_count must be > 0".to_string()));
+        }
+        if self.global.nft_table.is_empty() {
+            return Err(Error::Validation("nft_table must not be empty".to_string()));
+        }
+        if self.global.poll_interval_ms == 0 {
+            return Err(Error::Validation(
+                "poll_interval_ms must be > 0".to_string(),
+            ));
+        }
+
+        // 校验白名单 CIDR
+        for (i, cidr) in self.whitelist.cidr.iter().enumerate() {
+            if cidr.parse::<IpNet>().is_err() {
+                return Err(Error::InvalidCidr(format!(
+                    "whitelist[{}]: '{}' is not a valid CIDR",
+                    i, cidr
+                )));
+            }
+        }
+
+        // 校验规则配置
+        for (i, rule) in self.rules.iter().enumerate() {
+            if rule.name.is_empty() {
+                return Err(Error::Validation(format!(
+                    "rule[{}]: name must not be empty",
+                    i
+                )));
+            }
+
+            let protocol = rule.protocol.to_lowercase();
+            if protocol != "tcp" && protocol != "udp" {
+                return Err(Error::Validation(format!(
+                    "rule[{}] '{}': protocol must be 'tcp' or 'udp', got '{}'",
+                    i, rule.name, rule.protocol
+                )));
+            }
+
+            let rule_type = rule.rule_type.to_lowercase();
+            if rule_type != "ip" && rule_type != "cidr" {
+                return Err(Error::Validation(format!(
+                    "rule[{}] '{}': rule_type must be 'ip' or 'cidr', got '{}'",
+                    i, rule.name, rule.rule_type
+                )));
+            }
+
+            if rule.rule_type == "cidr" {
+                if rule.ipv4_prefix.is_none() || rule.ipv6_prefix.is_none() {
+                    return Err(Error::Validation(format!(
+                        "rule[{}] '{}': cidr rule requires both ipv4_prefix and ipv6_prefix",
+                        i, rule.name
+                    )));
+                }
+            }
+
+            if rule.window_secs == 0 {
+                return Err(Error::Validation(format!(
+                    "rule[{}] '{}': window_secs must be > 0",
+                    i, rule.name
+                )));
+            }
+
+            if rule.threshold == 0 {
+                return Err(Error::Validation(format!(
+                    "rule[{}] '{}': threshold must be > 0",
+                    i, rule.name
+                )));
+            }
+
+            if rule.block_duration == 0 {
+                return Err(Error::Validation(format!(
+                    "rule[{}] '{}': block_duration must be > 0",
+                    i, rule.name
+                )));
+            }
+        }
+
+        // 校验 memory 配置
+        if self.memory.max_entries == 0 {
+            return Err(Error::Validation("max_entries must be > 0".to_string()));
+        }
+        if self.memory.cleanup_interval == 0 {
+            return Err(Error::Validation(
+                "cleanup_interval must be > 0".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 }
 
